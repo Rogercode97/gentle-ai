@@ -143,22 +143,34 @@ $env:GENTLE_AI_CHANNEL="beta"; irm https://raw.githubusercontent.com/Gentleman-P
 
 </details>
 
-### 📱 Termux Sync Instructions (Rogercode97 Fork)
+### 📱 Termux Edition (Rogercode97 Fork)
 
 This fork is specifically maintained to preserve Termux/Android compatibility patches on top of the latest Antigravity orchestrator logic. 
 
-To sync your fork with new updates from the original creators (`Gentleman-Programming`), run these 3 commands:
+#### Initial Setup (For new Termux installations)
+
+To install this Termux-optimized version from scratch, open your Termux terminal and run:
 
 ```bash
-# 1. Download official changes
-git fetch upstream
+# 1. Clone this fork
+git clone https://github.com/Rogercode97/gentle-ai.git ~/gentle-ai-termux
+cd ~/gentle-ai-termux
 
-# 2. Merge them into your Termux branch
-git merge upstream/main
+# 2. Add the original creators as 'upstream' (for future updates)
+git remote add upstream https://github.com/Gentleman-Programming/gentle-ai.git
 
-# 3. Backup to your GitHub fork
-git push rogercode HEAD:termux-main
+# 3. Build and install using Just
+just build
 ```
+
+#### Syncing with Upstream
+
+To sync your fork with new updates from the original creators (`Gentleman-Programming`), just run:
+
+```bash
+just update
+```
+*(This command automatically fetches upstream, merges the official updates into your branch, backs up to your fork, and rebuilds the binary).*
 
 ---
 
