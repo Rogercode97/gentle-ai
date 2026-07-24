@@ -41,7 +41,7 @@ type DetectionResult struct {
 }
 
 func IsSupportedOS(goos string) bool {
-	return goos == "darwin" || goos == "linux" || goos == "windows"
+	return goos == "darwin" || goos == "linux" || goos == "windows" || goos == "android"
 }
 
 func Detect(ctx context.Context) (DetectionResult, error) {
@@ -125,6 +125,10 @@ func resolvePlatformProfile(goos, linuxOSRelease string, tools map[string]ToolSt
 	switch goos {
 	case "darwin":
 		profile.PackageManager = "brew"
+		profile.Supported = true
+		return profile
+	case "android":
+		profile.PackageManager = "apt"
 		profile.Supported = true
 		return profile
 	case "linux":
