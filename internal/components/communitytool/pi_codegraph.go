@@ -514,7 +514,7 @@ func probePiCodeGraphMCPWithAgentDir(mcpPath, agentDir string) (PiCodeGraphMCPPr
 func probePiCodeGraphMCPWithAgentDirContext(ctx context.Context, mcpPath, agentDir string) (probeResult PiCodeGraphMCPProbeResult, returnErr error) {
 	adapterPath := filepath.Join(agentDir, "npm", "node_modules", "pi-mcp-adapter", "index.ts")
 	if _, err := os.Stat(adapterPath); err != nil {
-		return PiCodeGraphMCPProbeResult{}, fmt.Errorf("Pi MCP adapter extension is unavailable at %q: %w", adapterPath, err)
+		return PiCodeGraphMCPProbeResult{}, fmt.Errorf("Pi MCP adapter extension is unavailable at %q: %v: %w", adapterPath, err, ErrPiCodeGraphAdapterHealthUnavailable)
 	}
 	command := exec.CommandContext(ctx, "codegraph", "serve", "--mcp")
 	stdin, err := command.StdinPipe()
