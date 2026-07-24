@@ -627,6 +627,7 @@ func TestValidateAgentInstallPreflight(t *testing.T) {
 
 func TestResolveComponentInstall(t *testing.T) {
 	r := NewResolver()
+	ggaTmp := filepath.Join(os.TempDir(), "gentleman-guardian-angel")
 
 	tests := []struct {
 		name      string
@@ -672,12 +673,12 @@ func TestResolveComponentInstall(t *testing.T) {
 			profile:   system.PlatformProfile{OS: "linux", LinuxDistro: system.LinuxDistroUbuntu, PackageManager: "apt"},
 			component: model.ComponentGGA,
 			want: CommandSequence{
-				{"rm", "-rf", "/tmp/gentleman-guardian-angel"},
-				{"mkdir", "-p", "/tmp/gentleman-guardian-angel"},
-				{"git", "init", "/tmp/gentleman-guardian-angel"},
-				{"git", "-C", "/tmp/gentleman-guardian-angel", "fetch", "--depth=1", "https://github.com/Gentleman-Programming/gentleman-guardian-angel.git", "refs/tags/v" + versions.GGAVersion + ":refs/tags/v" + versions.GGAVersion},
-				{"git", "-C", "/tmp/gentleman-guardian-angel", "checkout", "-f", "refs/tags/v" + versions.GGAVersion},
-				{"bash", "/tmp/gentleman-guardian-angel/install.sh"},
+				{"rm", "-rf", ggaTmp},
+				{"mkdir", "-p", ggaTmp},
+				{"git", "init", ggaTmp},
+				{"git", "-C", ggaTmp, "fetch", "--depth=1", "https://github.com/Gentleman-Programming/gentleman-guardian-angel.git", "refs/tags/v" + versions.GGAVersion + ":refs/tags/v" + versions.GGAVersion},
+				{"git", "-C", ggaTmp, "checkout", "-f", "refs/tags/v" + versions.GGAVersion},
+				{"bash", ggaTmp + "/install.sh"},
 			},
 		},
 		{
@@ -685,12 +686,12 @@ func TestResolveComponentInstall(t *testing.T) {
 			profile:   system.PlatformProfile{OS: "linux", LinuxDistro: system.LinuxDistroArch, PackageManager: "pacman"},
 			component: model.ComponentGGA,
 			want: CommandSequence{
-				{"rm", "-rf", "/tmp/gentleman-guardian-angel"},
-				{"mkdir", "-p", "/tmp/gentleman-guardian-angel"},
-				{"git", "init", "/tmp/gentleman-guardian-angel"},
-				{"git", "-C", "/tmp/gentleman-guardian-angel", "fetch", "--depth=1", "https://github.com/Gentleman-Programming/gentleman-guardian-angel.git", "refs/tags/v" + versions.GGAVersion + ":refs/tags/v" + versions.GGAVersion},
-				{"git", "-C", "/tmp/gentleman-guardian-angel", "checkout", "-f", "refs/tags/v" + versions.GGAVersion},
-				{"bash", "/tmp/gentleman-guardian-angel/install.sh"},
+				{"rm", "-rf", ggaTmp},
+				{"mkdir", "-p", ggaTmp},
+				{"git", "init", ggaTmp},
+				{"git", "-C", ggaTmp, "fetch", "--depth=1", "https://github.com/Gentleman-Programming/gentleman-guardian-angel.git", "refs/tags/v" + versions.GGAVersion + ":refs/tags/v" + versions.GGAVersion},
+				{"git", "-C", ggaTmp, "checkout", "-f", "refs/tags/v" + versions.GGAVersion},
+				{"bash", ggaTmp + "/install.sh"},
 			},
 		},
 		{
@@ -698,12 +699,12 @@ func TestResolveComponentInstall(t *testing.T) {
 			profile:   system.PlatformProfile{OS: "linux", LinuxDistro: system.LinuxDistroFedora, PackageManager: "dnf"},
 			component: model.ComponentGGA,
 			want: CommandSequence{
-				{"rm", "-rf", "/tmp/gentleman-guardian-angel"},
-				{"mkdir", "-p", "/tmp/gentleman-guardian-angel"},
-				{"git", "init", "/tmp/gentleman-guardian-angel"},
-				{"git", "-C", "/tmp/gentleman-guardian-angel", "fetch", "--depth=1", "https://github.com/Gentleman-Programming/gentleman-guardian-angel.git", "refs/tags/v" + versions.GGAVersion + ":refs/tags/v" + versions.GGAVersion},
-				{"git", "-C", "/tmp/gentleman-guardian-angel", "checkout", "-f", "refs/tags/v" + versions.GGAVersion},
-				{"bash", "/tmp/gentleman-guardian-angel/install.sh"},
+				{"rm", "-rf", ggaTmp},
+				{"mkdir", "-p", ggaTmp},
+				{"git", "init", ggaTmp},
+				{"git", "-C", ggaTmp, "fetch", "--depth=1", "https://github.com/Gentleman-Programming/gentleman-guardian-angel.git", "refs/tags/v" + versions.GGAVersion + ":refs/tags/v" + versions.GGAVersion},
+				{"git", "-C", ggaTmp, "checkout", "-f", "refs/tags/v" + versions.GGAVersion},
+				{"bash", ggaTmp + "/install.sh"},
 			},
 		},
 		{
@@ -713,12 +714,12 @@ func TestResolveComponentInstall(t *testing.T) {
 			profile:   system.PlatformProfile{OS: "linux", LinuxDistro: "alpine", PackageManager: "apk", Supported: true},
 			component: model.ComponentGGA,
 			want: CommandSequence{
-				{"rm", "-rf", "/tmp/gentleman-guardian-angel"},
-				{"mkdir", "-p", "/tmp/gentleman-guardian-angel"},
-				{"git", "init", "/tmp/gentleman-guardian-angel"},
-				{"git", "-C", "/tmp/gentleman-guardian-angel", "fetch", "--depth=1", "https://github.com/Gentleman-Programming/gentleman-guardian-angel.git", "refs/tags/v" + versions.GGAVersion + ":refs/tags/v" + versions.GGAVersion},
-				{"git", "-C", "/tmp/gentleman-guardian-angel", "checkout", "-f", "refs/tags/v" + versions.GGAVersion},
-				{"bash", "/tmp/gentleman-guardian-angel/install.sh"},
+				{"rm", "-rf", ggaTmp},
+				{"mkdir", "-p", ggaTmp},
+				{"git", "init", ggaTmp},
+				{"git", "-C", ggaTmp, "fetch", "--depth=1", "https://github.com/Gentleman-Programming/gentleman-guardian-angel.git", "refs/tags/v" + versions.GGAVersion + ":refs/tags/v" + versions.GGAVersion},
+				{"git", "-C", ggaTmp, "checkout", "-f", "refs/tags/v" + versions.GGAVersion},
+				{"bash", ggaTmp + "/install.sh"},
 			},
 		},
 		{
@@ -726,12 +727,12 @@ func TestResolveComponentInstall(t *testing.T) {
 			profile:   system.PlatformProfile{OS: "linux", LinuxDistro: "nixos", PackageManager: "nix", Supported: true},
 			component: model.ComponentGGA,
 			want: CommandSequence{
-				{"rm", "-rf", "/tmp/gentleman-guardian-angel"},
-				{"mkdir", "-p", "/tmp/gentleman-guardian-angel"},
-				{"git", "init", "/tmp/gentleman-guardian-angel"},
-				{"git", "-C", "/tmp/gentleman-guardian-angel", "fetch", "--depth=1", "https://github.com/Gentleman-Programming/gentleman-guardian-angel.git", "refs/tags/v" + versions.GGAVersion + ":refs/tags/v" + versions.GGAVersion},
-				{"git", "-C", "/tmp/gentleman-guardian-angel", "checkout", "-f", "refs/tags/v" + versions.GGAVersion},
-				{"bash", "/tmp/gentleman-guardian-angel/install.sh"},
+				{"rm", "-rf", ggaTmp},
+				{"mkdir", "-p", ggaTmp},
+				{"git", "init", ggaTmp},
+				{"git", "-C", ggaTmp, "fetch", "--depth=1", "https://github.com/Gentleman-Programming/gentleman-guardian-angel.git", "refs/tags/v" + versions.GGAVersion + ":refs/tags/v" + versions.GGAVersion},
+				{"git", "-C", ggaTmp, "checkout", "-f", "refs/tags/v" + versions.GGAVersion},
+				{"bash", ggaTmp + "/install.sh"},
 			},
 		},
 		{
@@ -798,7 +799,7 @@ func TestResolveGGAInstall_UsesPinnedReleaseTag(t *testing.T) {
 	wantFetch := []string{
 		"git",
 		"-C",
-		"/tmp/gentleman-guardian-angel",
+		filepath.Join(os.TempDir(), "gentleman-guardian-angel"),
 		"fetch",
 		"--depth=1",
 		"https://github.com/Gentleman-Programming/gentleman-guardian-angel.git",
@@ -852,8 +853,8 @@ func TestGGAInstall_CleanupCommandBehavior(t *testing.T) {
 		cmdStr := strings.ReplaceAll(cleanupCmd[3], systemTemp, system.PowerShellSingleQuoted(staleDir))
 		testCmd = []string{cleanupCmd[0], cleanupCmd[1], cleanupCmd[2], cmdStr}
 	} else {
-		// Cleanup command: rm -rf /tmp/gentleman-guardian-angel
-		// Substitute /tmp/... with our local staleDir.
+		// Cleanup command: rm -rf <os.TempDir()>/gentleman-guardian-angel
+		// Substitute the system Temp path with our local staleDir.
 		testCmd = []string{cleanupCmd[0], cleanupCmd[1], staleDir}
 	}
 
