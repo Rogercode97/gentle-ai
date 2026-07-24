@@ -261,11 +261,11 @@ func resolveGGAInstall(profile system.PlatformProfile) (CommandSequence, error) 
 			{"brew", "reinstall", "gga"},
 		}, nil
 	case "apt", "pacman", "dnf":
-		const tmpDir = "/tmp/gentleman-guardian-angel"
+		tmpDir := filepath.Join(os.TempDir(), "gentleman-guardian-angel")
 		return CommandSequence{
 			{"rm", "-rf", tmpDir},
 			{"git", "clone", "--depth=1", "--branch", "v" + versions.GGAVersion, "https://github.com/Gentleman-Programming/gentleman-guardian-angel.git", tmpDir},
-			{"bash", tmpDir + "/install.sh"},
+			{"bash", filepath.Join(tmpDir, "install.sh")},
 		}, nil
 	case "winget":
 		// On Windows, use Git Bash explicitly to avoid bare "bash" resolving to
