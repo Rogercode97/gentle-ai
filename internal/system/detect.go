@@ -117,6 +117,14 @@ func osReleaseContent(goos string) (string, error) {
 func resolvePlatformProfile(goos, linuxOSRelease string, tools map[string]ToolStatus) PlatformProfile {
 	profile := PlatformProfile{OS: goos}
 
+	// [TERMUX EDITION] Dynamic detection for Termux environments
+	if prefix := os.Getenv("PREFIX"); prefix != "" && strings.Contains(prefix, "com.termux") {
+		profile.OS = "android"
+		profile.PackageManager = "apt"
+		profile.Supported = true
+		return profile
+	}
+
 	// Detect Go availability for the brew → go-install → binary auto-detect order.
 	if go_, ok := tools["go"]; ok && go_.Installed {
 		profile.GoAvailable = true
