@@ -21,7 +21,7 @@ build:
     @echo "🔨 Compilando gentle-ai..."
     go build -o gentle-ai ./cmd/gentle-ai
     @echo "📦 Instalando en ~/.local/bin..."
-    cp gentle-ai ~/.local/bin/gentle-ai
+    install -m 755 gentle-ai ~/.local/bin/gentle-ai
     @echo "✅ Instalación completada."
 
 # Comando todo-en-uno: sincroniza y luego compila e instala
