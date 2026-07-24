@@ -2,9 +2,9 @@
 
 <img width="3276" height="1280" alt="Gentle-AI neon rose banner" src="docs/assets/brand/gentle-ai-banner.png" />
 
-<h1>Gentle-AI</h1>
+<h1>Gentle-AI (Termux Edition)</h1>
 
-<p><strong>Gentle-AI — Ecosystem, Frameworks, Workflows for AI coding agents.</strong></p>
+<p><strong>Gentle-AI (Termux Edition) — Ecosystem, Frameworks, Workflows for AI coding agents, optimized for Android/Termux environments.</strong></p>
 
 <p>
 <a href="https://github.com/Gentleman-Programming/gentle-ai/releases"><img src="https://img.shields.io/github/v/release/Gentleman-Programming/gentle-ai" alt="Release"></a>
@@ -142,6 +142,23 @@ $env:GENTLE_AI_CHANNEL="beta"; irm https://raw.githubusercontent.com/Gentleman-P
 ```
 
 </details>
+
+### 📱 Termux Sync Instructions (Rogercode97 Fork)
+
+This fork is specifically maintained to preserve Termux/Android compatibility patches on top of the latest Antigravity orchestrator logic. 
+
+To sync your fork with new updates from the original creators (`Gentleman-Programming`), run these 3 commands:
+
+```bash
+# 1. Download official changes
+git fetch upstream
+
+# 2. Merge them into your Termux branch
+git merge upstream/main
+
+# 3. Backup to your GitHub fork
+git push rogercode HEAD:termux-main
+```
 
 ---
 
