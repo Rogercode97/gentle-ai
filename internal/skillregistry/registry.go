@@ -75,6 +75,8 @@ func UserSkillDirs(home string) []string {
 		// with older installs and any tooling that still uses the bare `.gemini/antigravity`
 		// path. New installs should prefer the variant-specific dirs above.
 		filepath.Join(home, ".gemini", "antigravity", "skills"),
+		filepath.Join(home, ".gemini", "antigravity-desktop", "skills"),
+		filepath.Join(home, ".gemini", "antigravity-cli", "skills"),
 		filepath.Join(home, ".cursor", "skills"),
 		filepath.Join(home, ".copilot", "skills"),
 		filepath.Join(home, ".codex", "skills"),
