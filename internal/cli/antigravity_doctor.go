@@ -8,6 +8,7 @@ import (
 
 	"github.com/gentleman-programming/gentle-ai/internal/agents/antigravity"
 	"github.com/gentleman-programming/gentle-ai/internal/components/sdd"
+	"github.com/gentleman-programming/gentle-ai/internal/doctor"
 )
 
 // Antigravity dynamic subagents are runtime tools of the Mission Control
@@ -71,10 +72,10 @@ func checkAntigravityDynamicSubagentRuntime(homeDir string) []CheckResult {
 	hardeningOK := sdd.HasAntigravitySddAgentsHardeningContract(homeDir)
 	detail := "Antigravity dynamic subagent hardening plugin is installed at " +
 		sdd.AntigravitySddAgentsPluginDir(homeDir)
-	remedy := ""
+	remedy := (*doctor.Remedy)(nil)
 	if !hardeningOK {
 		detail = "Antigravity dynamic subagent hardening plugin is NOT installed; dynamic subagents will not be bound to the SDD/Review/JD tool-hardening contract."
-		remedy = fmt.Sprintf("Run `gentle-ai install --agent antigravity` (or `gentle-ai sync`) to install the gentle-ai-sdd-agents plugin under %s/plugins/.", configDir)
+		remedy = doctor.NewRemedy(doctor.RemedyInstall, fmt.Sprintf("Run `gentle-ai install --agent antigravity` (or `gentle-ai sync`) to install the gentle-ai-sdd-agents plugin under %s/plugins/.", configDir))
 	}
 	status := CheckStatusPass
 	if !hardeningOK {
