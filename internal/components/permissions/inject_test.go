@@ -2,21 +2,22 @@ package permissions
 
 import (
 	"encoding/json"
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
-	"github.com/gentleman-programming/gentle-ai/internal/agents"
-	"github.com/gentleman-programming/gentle-ai/internal/agents/antigravity"
-	"github.com/gentleman-programming/gentle-ai/internal/agents/claude"
-	"github.com/gentleman-programming/gentle-ai/internal/agents/codex"
-	"github.com/gentleman-programming/gentle-ai/internal/agents/cursor"
-	"github.com/gentleman-programming/gentle-ai/internal/agents/gemini"
-	"github.com/gentleman-programming/gentle-ai/internal/agents/hermes"
-	"github.com/gentleman-programming/gentle-ai/internal/agents/opencode"
-	"github.com/gentleman-programming/gentle-ai/internal/agents/vscode"
+	"github.com/gentleman-programming/gentle-ai/v2/internal/agents"
+	"github.com/gentleman-programming/gentle-ai/v2/internal/agents/antigravity"
+	"github.com/gentleman-programming/gentle-ai/v2/internal/agents/claude"
+	"github.com/gentleman-programming/gentle-ai/v2/internal/agents/codex"
+	"github.com/gentleman-programming/gentle-ai/v2/internal/agents/cursor"
+	"github.com/gentleman-programming/gentle-ai/v2/internal/agents/gemini"
+	"github.com/gentleman-programming/gentle-ai/v2/internal/agents/hermes"
+	"github.com/gentleman-programming/gentle-ai/v2/internal/agents/opencode"
+	"github.com/gentleman-programming/gentle-ai/v2/internal/agents/vscode"
+	"github.com/gentleman-programming/gentle-ai/v2/internal/model"
 )
 
 func claudeAdapter() agents.Adapter      { return claude.NewAdapter() }
@@ -66,15 +67,6 @@ glob_scan_max_depth = 6
 
 [permissions.gentle-dev.workspace_roots]
 "~" = true
-
-[mcp_servers.engram]
-command = "engram"
-args = ["mcp", "--tools=agent"]
-`
-
-// codexCleanedConfig is codexInjectedLegacyConfig with every previously
-// injected key and table removed and user content preserved byte-for-byte.
-const codexCleanedConfig = `model = "gpt-5.5"
 
 [mcp_servers.engram]
 command = "engram"
@@ -366,412 +358,73 @@ func TestInjectCursorSkipsPermissions(t *testing.T) {
 	}
 }
 
-func TestInjectAntigravityPermissions(t *testing.T) {
-	t.Run("fresh injection", func(t *testing.T) {
-		home := t.TempDir()
-		adapter := antigravityAdapter()
+func TestInjectAntigravitySkipsPermissions(t *testing.T) {
+	overlay := agentOverlay(model.AgentAntigravity)
+	if overlay != nil {
+		t.Errorf("expected nil overlay for Antigravity, got %s", overlay)
+	}
+}
 
-		result, err := Inject(home, adapter)
-		if err != nil {
-			t.Fatalf("Inject() error = %v", err)
-		}
-		if !result.Changed {
-			t.Fatal("expected result.Changed to be true on fresh injection")
-		}
+// TestInjectCodexNeverWritesConfig pins the decision that gentle-ai writes
+// nothing to Codex's permissions configuration — neither a profile nor the
+// legacy migration that used to strip one. Codex refuses to load a config that
+// defines a [permissions.*] profile without default_permissions, so a cleanup
+// that removed the pointer while a profile survived stopped Codex from starting
+// at all (#1794). Whoever still carries an old gentle-dev profile keeps it.
+//
+// Byte equality alone is not the assertion: an atomic rewrite that happens to
+// produce identical bytes is still a write. Every fixture is backdated so the
+// modification time proves the file was left alone.
+func TestInjectCodexNeverWritesConfig(t *testing.T) {
+	backdated := time.Date(2020, time.January, 2, 3, 4, 5, 0, time.UTC)
 
-		settingsPath := TargetPath(home, adapter)
-		if len(result.Files) != 1 || result.Files[0] != settingsPath {
-			t.Fatalf("expected files = [%q], got %v", settingsPath, result.Files)
-		}
+	tests := []struct {
+		name    string
+		content string
+	}{
+		{name: "user reported blocker", content: "approval_policy = \"on-request\"\ndefault_permissions = \"gentle-dev\"\n\n[permissions.gentle-dev]\nnetwork.enabled = true\n"},
+		{name: "fully injected legacy profile", content: codexInjectedLegacyConfig},
+		{name: "residual generated profile", content: "model = \"gpt-5.5\"\n\n[permissions.gentle-dev]\n\n[permissions.gentle-dev.workspace_roots]\n"},
+		{name: "user owned gentle-dev content", content: "approval_policy = \"never\"\ndefault_permissions = \"gentle-dev\"\n\n[permissions.custom]\ndescription = \"user profile\"\n\n[permissions.gentle-dev] # user-owned\nuser_note = \"keep\"\n"},
+		{name: "quoted gentle-dev forms", content: "permissions.\"gentle-dev\".workspace_roots.\"~\" = true\n"},
+		{name: "dotted user value", content: "default_permissions = \"gentle-dev\"\npermissions.gentle-dev.custom_flag = true\n"},
+	}
 
-		content, err := os.ReadFile(settingsPath)
-		if err != nil {
-			t.Fatalf("failed to read settings file: %v", err)
-		}
-
-		var settings map[string]any
-		if err := json.Unmarshal(content, &settings); err != nil {
-			t.Fatalf("failed to parse settings JSON: %v", err)
-		}
-
-		perms, ok := settings["permissions"].(map[string]any)
-		if !ok {
-			t.Fatalf("permissions node missing or invalid: %#v", settings)
-		}
-
-		allowList, ok := perms["allow"].([]any)
-		if !ok {
-			t.Fatalf("allow list missing or invalid: %#v", perms)
-		}
-
-		expected := map[string]bool{
-			"command(gentle-ai)":              false,
-			"command(codegraph)":              false,
-			"command(git)":                    false,
-			"mcp(engram/mem_capture_passive)": false,
-			"mcp(engram/mem_compare)":         false,
-			"mcp(engram/mem_context)":         false,
-			"mcp(engram/mem_current_project)": false,
-			"mcp(engram/mem_doctor)":          false,
-			"mcp(engram/mem_get_observation)": false,
-			"mcp(engram/mem_judge)":           false,
-			"mcp(engram/mem_pin)":             false,
-			"mcp(engram/mem_review)":          false,
-			"mcp(engram/mem_save)":            false,
-			"mcp(engram/mem_save_prompt)":     false,
-			"mcp(engram/mem_search)":          false,
-			"mcp(engram/mem_session_end)":     false,
-			"mcp(engram/mem_session_start)":   false,
-			"mcp(engram/mem_session_summary)": false,
-			"mcp(engram/mem_suggest_topic_key)": false,
-			"mcp(engram/mem_unpin)":           false,
-			"mcp(engram/mem_update)":          false,
-		}
-
-		for _, entry := range allowList {
-			s, ok := entry.(string)
-			if ok {
-				if _, ok := expected[s]; ok {
-					expected[s] = true
-				}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			home := t.TempDir()
+			configPath := writeCodexConfig(t, home, tt.content)
+			if err := os.Chtimes(configPath, backdated, backdated); err != nil {
+				t.Fatalf("Chtimes() error = %v", err)
 			}
-		}
 
-		for cmd, found := range expected {
-			if !found {
-				t.Errorf("missing expected command in allow list: %s", cmd)
+			result, err := Inject(home, codexAdapter())
+			if err != nil {
+				t.Fatalf("Inject() error = %v", err)
 			}
-		}
-		if len(allowList) != 21 {
-			t.Errorf("expected exactly 21 commands in allow list, got %d", len(allowList))
-		}
-	})
-
-	t.Run("union merge and preservation", func(t *testing.T) {
-		home := t.TempDir()
-		adapter := antigravityAdapter()
-		settingsPath := TargetPath(home, adapter)
-
-		// Create settings directory
-		if err := os.MkdirAll(filepath.Dir(settingsPath), 0o755); err != nil {
-			t.Fatalf("failed to create settings dir: %v", err)
-		}
-
-		initialSettings := map[string]any{
-			"toolPermission":       "ask",
-			"artifactReviewPolicy": "strict",
-			"permissions": map[string]any{
-				"allow": []any{"command(custom)", "command(git)"},
-				"deny":  []any{"command(malicious)"},
-			},
-		}
-
-		initialJSON, err := json.Marshal(initialSettings)
-		if err != nil {
-			t.Fatalf("marshal initial settings: %v", err)
-		}
-
-		if err := os.WriteFile(settingsPath, initialJSON, 0o644); err != nil {
-			t.Fatalf("write initial settings: %v", err)
-		}
-
-		result, err := Inject(home, adapter)
-		if err != nil {
-			t.Fatalf("Inject() error = %v", err)
-		}
-		if !result.Changed {
-			t.Fatal("expected result.Changed to be true on merge")
-		}
-
-		content, err := os.ReadFile(settingsPath)
-		if err != nil {
-			t.Fatalf("read settings: %v", err)
-		}
-
-		var settings map[string]any
-		if err := json.Unmarshal(content, &settings); err != nil {
-			t.Fatalf("unmarshal merged settings: %v", err)
-		}
-
-		// Verify preferences are preserved
-		if val, ok := settings["toolPermission"].(string); !ok || val != "ask" {
-			t.Errorf("expected toolPermission = 'ask', got %v", settings["toolPermission"])
-		}
-		if val, ok := settings["artifactReviewPolicy"].(string); !ok || val != "strict" {
-			t.Errorf("expected artifactReviewPolicy = 'strict', got %v", settings["artifactReviewPolicy"])
-		}
-
-		perms, ok := settings["permissions"].(map[string]any)
-		if !ok {
-			t.Fatalf("permissions node missing")
-		}
-
-		// Verify deny is preserved
-		denyList, ok := perms["deny"].([]any)
-		if !ok || len(denyList) != 1 || denyList[0] != "command(malicious)" {
-			t.Errorf("deny list was modified: %#v", perms["deny"])
-		}
-
-		// Verify allow list is union-merged
-		allowList, ok := perms["allow"].([]any)
-		if !ok {
-			t.Fatalf("allow list missing")
-		}
-
-		expected := map[string]bool{
-			"command(custom)":                 false,
-			"command(gentle-ai)":              false,
-			"command(codegraph)":              false,
-			"command(git)":                    false,
-			"mcp(engram/mem_capture_passive)": false,
-			"mcp(engram/mem_compare)":         false,
-			"mcp(engram/mem_context)":         false,
-			"mcp(engram/mem_current_project)": false,
-			"mcp(engram/mem_doctor)":          false,
-			"mcp(engram/mem_get_observation)": false,
-			"mcp(engram/mem_judge)":           false,
-			"mcp(engram/mem_pin)":             false,
-			"mcp(engram/mem_review)":          false,
-			"mcp(engram/mem_save)":            false,
-			"mcp(engram/mem_save_prompt)":     false,
-			"mcp(engram/mem_search)":          false,
-			"mcp(engram/mem_session_end)":     false,
-			"mcp(engram/mem_session_start)":   false,
-			"mcp(engram/mem_session_summary)": false,
-			"mcp(engram/mem_suggest_topic_key)": false,
-			"mcp(engram/mem_unpin)":           false,
-			"mcp(engram/mem_update)":          false,
-		}
-
-		for _, entry := range allowList {
-			s, ok := entry.(string)
-			if ok {
-				if _, ok := expected[s]; ok {
-					expected[s] = true
-				}
+			if result.Changed {
+				t.Error("Inject(codex) changed = true, want false")
 			}
-		}
-
-		for cmd, found := range expected {
-			if !found {
-				t.Errorf("missing expected command in allow list: %s", cmd)
+			if len(result.Files) != 0 {
+				t.Errorf("Inject(codex) files = %v, want none", result.Files)
 			}
-		}
-		if len(allowList) != 22 {
-			t.Errorf("expected exactly 22 commands in allow list, got %d", len(allowList))
-		}
-	})
 
-	t.Run("idempotency", func(t *testing.T) {
-		home := t.TempDir()
-		adapter := antigravityAdapter()
+			content, err := os.ReadFile(configPath)
+			if err != nil {
+				t.Fatalf("read config.toml: %v", err)
+			}
+			if string(content) != tt.content {
+				t.Errorf("config.toml = %q, want byte-identical %q", content, tt.content)
+			}
 
-		// Run first time
-		result1, err := Inject(home, adapter)
-		if err != nil {
-			t.Fatalf("first Inject() error = %v", err)
-		}
-		if !result1.Changed {
-			t.Fatal("expected first run to make changes")
-		}
-
-		// Run second time
-		result2, err := Inject(home, adapter)
-		if err != nil {
-			t.Fatalf("second Inject() error = %v", err)
-		}
-		if result2.Changed {
-			t.Fatal("expected second run result.Changed to be false")
-		}
-	})
-}
-
-func TestInjectCodexRemovesInjectedGentleDevProfile(t *testing.T) {
-	home := t.TempDir()
-	configPath := writeCodexConfig(t, home, codexInjectedLegacyConfig)
-
-	result, err := Inject(home, codexAdapter())
-	if err != nil {
-		t.Fatalf("Inject() error = %v", err)
-	}
-	if !result.Changed {
-		t.Fatal("Inject() changed = false, want true")
-	}
-	if len(result.Files) != 1 || result.Files[0] != configPath {
-		t.Fatalf("Inject() files = %v, want [%q]", result.Files, configPath)
-	}
-
-	content, err := os.ReadFile(configPath)
-	if err != nil {
-		t.Fatalf("read config.toml: %v", err)
-	}
-	if string(content) != codexCleanedConfig {
-		t.Fatalf("cleaned config.toml = %q, want %q", content, codexCleanedConfig)
-	}
-	if strings.Contains(string(content), "gentle-dev") {
-		t.Fatalf("cleaned config.toml still mentions gentle-dev; got:\n%s", content)
-	}
-}
-
-func TestInjectCodexRemovesResidualGeneratedGentleDevProfile(t *testing.T) {
-	home := t.TempDir()
-	initial := `model = "gpt-5.5"
-
-[permissions.gentle-dev]
-
-[permissions.gentle-dev.network]
-
-[permissions.gentle-dev.network.domains]
-
-[permissions.gentle-dev.filesystem]
-
-[permissions.gentle-dev.filesystem.":workspace_roots"]
-"**/.config/gh/hosts.yml" = "deny"
-"**/.aws/credentials" = "deny"
-"**/credentials.json" = "deny"
-"**/.credentials/**" = "deny"
-"**/.ssh/**" = "deny"
-"**/secrets/**" = "deny"
-"**/.env.*.local" = "deny"
-"**/.env.local" = "deny"
-
-[permissions.gentle-dev.workspace_roots]
-
-[mcp_servers.engram]
-command = "engram"
-`
-	want := `model = "gpt-5.5"
-
-[mcp_servers.engram]
-command = "engram"
-`
-	configPath := writeCodexConfig(t, home, initial)
-
-	result, err := Inject(home, codexAdapter())
-	if err != nil {
-		t.Fatalf("Inject() error = %v", err)
-	}
-	if !result.Changed {
-		t.Fatal("Inject() changed = false, want true")
-	}
-
-	content, err := os.ReadFile(configPath)
-	if err != nil {
-		t.Fatalf("read config.toml: %v", err)
-	}
-	text := string(content)
-	if strings.Contains(text, "[permissions.gentle-dev") {
-		t.Fatalf("cleaned config.toml still contains the retired gentle-dev profile; got:\n%s", text)
-	}
-	if strings.Contains(text, "default_permissions") {
-		t.Fatalf("cleaned config.toml restored a default_permissions pointer; got:\n%s", text)
-	}
-	if text != want {
-		t.Fatalf("cleaned config.toml = %q, want %q", text, want)
-	}
-}
-
-func TestInjectCodexCleanupIsIdempotent(t *testing.T) {
-	home := t.TempDir()
-	configPath := writeCodexConfig(t, home, codexInjectedLegacyConfig)
-
-	first, err := Inject(home, codexAdapter())
-	if err != nil {
-		t.Fatalf("Inject() first error = %v", err)
-	}
-	if !first.Changed {
-		t.Fatal("Inject() first changed = false")
-	}
-	firstContent, err := os.ReadFile(configPath)
-	if err != nil {
-		t.Fatalf("ReadFile() first error = %v", err)
-	}
-
-	second, err := Inject(home, codexAdapter())
-	if err != nil {
-		t.Fatalf("Inject() second error = %v", err)
-	}
-	if second.Changed {
-		t.Fatal("Inject() second changed = true, want false")
-	}
-	secondContent, err := os.ReadFile(configPath)
-	if err != nil {
-		t.Fatalf("ReadFile() second error = %v", err)
-	}
-	if string(firstContent) != string(secondContent) {
-		t.Fatalf("Codex cleanup is not idempotent:\nfirst:\n%s\nsecond:\n%s", firstContent, secondContent)
-	}
-}
-
-func TestInjectCodexPreservesUserOwnedGentleDevContent(t *testing.T) {
-	home := t.TempDir()
-	initial := `approval_policy = "never"
-default_permissions = "gentle-dev"
-
-[permissions.custom]
-description = "user profile"
-
-[permissions.custom.filesystem]
-":minimal" = "read"
-
-[permissions.gentle-dev] # user-owned
-description = "user profile"
-user_note = "keep"
-
-[permissions.gentle-dev.filesystem]
-":minimal" = "read"
-"~/custom" = "write"
-`
-	want := `approval_policy = "never"
-
-[permissions.custom]
-description = "user profile"
-
-[permissions.custom.filesystem]
-":minimal" = "read"
-
-[permissions.gentle-dev] # user-owned
-description = "user profile"
-user_note = "keep"
-
-[permissions.gentle-dev.filesystem]
-"~/custom" = "write"
-`
-	configPath := writeCodexConfig(t, home, initial)
-
-	result, err := Inject(home, codexAdapter())
-	if err != nil {
-		t.Fatalf("Inject() error = %v", err)
-	}
-	if !result.Changed {
-		t.Fatal("Inject() changed = false, want true")
-	}
-
-	content, err := os.ReadFile(configPath)
-	if err != nil {
-		t.Fatalf("read config.toml: %v", err)
-	}
-	if string(content) != want {
-		t.Fatalf("cleaned config.toml = %q, want %q", content, want)
-	}
-	second, err := Inject(home, codexAdapter())
-	if err != nil || second.Changed {
-		t.Fatalf("second Inject() = %#v, %v; want unchanged", second, err)
-	}
-}
-
-func TestInjectCodexPreservesUserOwnedDottedValue(t *testing.T) {
-	home := t.TempDir()
-	configPath := writeCodexConfig(t, home, "default_permissions = \"gentle-dev\"\npermissions.gentle-dev.custom_flag = true\n")
-	if _, err := Inject(home, codexAdapter()); err != nil {
-		t.Fatal(err)
-	}
-	content, err := os.ReadFile(configPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if want := "permissions.gentle-dev.custom_flag = true\n"; string(content) != want {
-		t.Fatalf("cleaned config.toml = %q, want %q", content, want)
+			info, err := os.Stat(configPath)
+			if err != nil {
+				t.Fatalf("Stat(config.toml) error = %v", err)
+			}
+			if !info.ModTime().UTC().Equal(backdated) {
+				t.Errorf("config.toml mtime = %v, want %v — the file was written, not left alone", info.ModTime().UTC(), backdated)
+			}
+		})
 	}
 }
 
@@ -793,81 +446,10 @@ func TestInjectCodexMissingConfigDoesNothing(t *testing.T) {
 	}
 }
 
-func TestInjectCodexReadErrorHasTOMLContext(t *testing.T) {
-	home := t.TempDir()
-	configPath := filepath.Join(home, ".codex", "config.toml")
-	if err := os.MkdirAll(configPath, 0o755); err != nil {
-		t.Fatalf("MkdirAll(config path): %v", err)
-	}
-
-	_, err := Inject(home, codexAdapter())
-	if err == nil {
-		t.Fatal("Inject() error = nil, want config read error")
-	}
-	if !strings.Contains(err.Error(), "read Codex config TOML") {
-		t.Fatalf("Inject() error = %q, want TOML read context", err)
-	}
-	var pathErr *os.PathError
-	if !errors.As(err, &pathErr) {
-		t.Fatalf("Inject() error = %T, want wrapped *os.PathError", err)
-	}
-	if pathErr.Path != configPath {
-		t.Fatalf("wrapped path = %q, want %q", pathErr.Path, configPath)
-	}
-}
-
-func TestInjectCodexRemovesQuotedGentleDevForms(t *testing.T) {
-	home := t.TempDir()
-	initial := `permissions."gentle-dev".workspace_roots."~" = true
-
-[permissions."gentle-dev".workspace_roots]
-"~" = true
-"~/project" = true
-
-[unrelated]
-"~" = true
-`
-	want := `
-[permissions."gentle-dev".workspace_roots]
-"~/project" = true
-
-[unrelated]
-"~" = true
-`
-	configPath := writeCodexConfig(t, home, initial)
-
-	result, err := Inject(home, codexAdapter())
-	if err != nil {
-		t.Fatalf("Inject() error = %v", err)
-	}
-	if !result.Changed {
-		t.Fatal("Inject() changed = false, want true for quoted gentle-dev forms")
-	}
-
-	content, err := os.ReadFile(configPath)
-	if err != nil {
-		t.Fatalf("read config.toml: %v", err)
-	}
-	if string(content) != want {
-		t.Fatalf("cleaned config.toml = %q, want %q", content, want)
-	}
-}
-
 func TestTargetPathCodexHasNoInjectionTarget(t *testing.T) {
 	home := t.TempDir()
 	if got := TargetPath(home, codexAdapter()); got != "" {
 		t.Fatalf("TargetPath(codex) = %q, want empty (Codex relies on built-in defaults)", got)
-	}
-}
-
-func TestCleanupPathCodexReturnsConfigTOML(t *testing.T) {
-	home := t.TempDir()
-	want := filepath.Join(home, ".codex", "config.toml")
-	if got := CleanupPath(home, codexAdapter()); got != want {
-		t.Fatalf("CleanupPath(codex) = %q, want %q", got, want)
-	}
-	if got := CleanupPath(home, claudeAdapter()); got != "" {
-		t.Fatalf("CleanupPath(claude) = %q, want empty (only Codex has a cleanup target)", got)
 	}
 }
 

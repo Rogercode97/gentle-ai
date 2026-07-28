@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gentleman-programming/gentle-ai/internal/components/sdd"
+	"github.com/gentleman-programming/gentle-ai/v2/internal/components/sdd"
 )
 
 func writeDoctorHardeningHook(t *testing.T, home string) {

@@ -8,9 +8,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/gentleman-programming/gentle-ai/internal/agents"
-	"github.com/gentleman-programming/gentle-ai/internal/components/sdd"
-	"github.com/gentleman-programming/gentle-ai/internal/model"
+	"github.com/gentleman-programming/gentle-ai/v2/internal/agents"
+	"github.com/gentleman-programming/gentle-ai/v2/internal/model"
 )
 
 const codeGraphUpstreamVersion = "1.4.1"
@@ -91,7 +90,10 @@ func codeGraphToolWiringPaths(homeDir string, adapter agents.Adapter) []string {
 	case model.AgentClaudeCode:
 		return []string{filepath.Join(homeDir, ".claude.json")}
 	case model.AgentAntigravity:
-		return sdd.AntigravityCodeGraphToolWiringPathsFn(homeDir, adapter)
+		return []string{
+			filepath.Join(homeDir, ".gemini", "config", "mcp_config.json"),
+			filepath.Join(homeDir, ".gemini", "antigravity", "mcp_config.json"),
+		}
 	case model.AgentKiroIDE:
 		return []string{filepath.Join(homeDir, ".kiro", "settings", "mcp.json")}
 	default:
@@ -113,7 +115,9 @@ func hasCodeGraphToolWiring(homeDir string, adapter agents.Adapter) (string, boo
 		return path, hasCanonicalCodeGraphServer(data)
 	}
 	if adapter.Agent() == model.AgentAntigravity {
-		return sdd.HasAntigravityCodeGraphToolWiringFn(homeDir, adapter)
+		path := antigravityCodeGraphMCPConfigPath(homeDir)
+		data, err := os.ReadFile(path)
+		return path, err == nil && hasCanonicalAntigravityCodeGraphServer(data)
 	}
 	if detector, ok := adapter.(agents.EffectiveCodeGraphWiringDetector); ok {
 		return detector.EffectiveCodeGraphWiring(homeDir)

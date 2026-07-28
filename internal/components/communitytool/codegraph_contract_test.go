@@ -11,9 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gentleman-programming/gentle-ai/internal/agents"
-	"github.com/gentleman-programming/gentle-ai/internal/components/sdd"
-	"github.com/gentleman-programming/gentle-ai/internal/model"
+	"github.com/gentleman-programming/gentle-ai/v2/internal/agents"
+	"github.com/gentleman-programming/gentle-ai/v2/internal/model"
 )
 
 func TestCodeGraphCompatibilityTableIsExhaustive(t *testing.T) {
@@ -312,42 +311,4 @@ func filesBelow(root string) ([]string, error) {
 		return nil
 	})
 	return files, err
-}
-
-func TestCodeGraphContractDelegatesToSDD(t *testing.T) {
-	oldWiringPaths := sdd.AntigravityCodeGraphToolWiringPathsFn
-	oldHasWiring := sdd.HasAntigravityCodeGraphToolWiringFn
-	defer func() {
-		sdd.AntigravityCodeGraphToolWiringPathsFn = oldWiringPaths
-		sdd.HasAntigravityCodeGraphToolWiringFn = oldHasWiring
-	}()
-
-	sdd.AntigravityCodeGraphToolWiringPathsFn = func(homeDir string, adapter agents.Adapter) []string {
-		return []string{"/mocked/sdd/path1", "/mocked/sdd/path2"}
-	}
-	sdd.HasAntigravityCodeGraphToolWiringFn = func(homeDir string, adapter agents.Adapter) (string, bool) {
-		return "/mocked/sdd/configured/path", true
-	}
-
-	reg, err := agents.NewDefaultRegistry()
-	if err != nil {
-		t.Fatal(err)
-	}
-	adapter, ok := reg.Get(model.AgentAntigravity)
-	if !ok {
-		t.Fatal("Antigravity adapter missing")
-	}
-
-	// 1. Verify codeGraphToolWiringPaths delegates
-	gotPaths := codeGraphToolWiringPaths("/some/home", adapter)
-	wantPaths := []string{"/mocked/sdd/path1", "/mocked/sdd/path2"}
-	if !reflect.DeepEqual(gotPaths, wantPaths) {
-		t.Errorf("codeGraphToolWiringPaths did not delegate to sdd; got %v, want %v", gotPaths, wantPaths)
-	}
-
-	// 2. Verify hasCodeGraphToolWiring delegates
-	gotPath, gotBool := hasCodeGraphToolWiring("/some/home", adapter)
-	if gotPath != "/mocked/sdd/configured/path" || !gotBool {
-		t.Errorf("hasCodeGraphToolWiring did not delegate to sdd; got (%q, %v), want (%q, true)", gotPath, gotBool, "/mocked/sdd/configured/path")
-	}
 }
