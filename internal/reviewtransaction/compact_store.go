@@ -95,16 +95,16 @@ var ErrHistoricalCompatReadOnly = errors.New("historical compatibility authority
 
 // compactRetiredStateFieldPaths lists dot-separated compact state field paths
 // persisted by older builds and removed from the current schema. Each path is
-// tolerated only at its exact nesting level: "zero_edit_escalation" at the
-// state top level and "recovery.review_start" nested inside the recovery
-// provenance object. Historical records that carry them load read-only with
-// the retired content dropped from the in-memory view only; the persisted
-// bytes, including the retired recovered-start provenance, remain untouched
-// on disk because the tolerant read never rewrites authority. New authority
-// state never persists these fields.
+// tolerated only at its exact nesting level: top-level entries remain top-level
+// and "recovery.review_start" remains nested inside recovery provenance.
+// Historical records that carry them load read-only with the retired content
+// dropped from the in-memory view only; persisted bytes remain untouched
+// because the tolerant read never rewrites authority. New authority state never
+// persists these fields.
 var compactRetiredStateFieldPaths = map[string]struct{}{
-	"zero_edit_escalation":  {},
-	"recovery.review_start": {},
+	"candidate_artifact_required": {},
+	"zero_edit_escalation":        {},
+	"recovery.review_start":       {},
 }
 
 // LegacyReadOnlyError is the typed ordinary-mutation denial for historical
@@ -758,6 +758,7 @@ func compactAuthorityRemovalRegression(before, after map[string]CompactRecord) e
 	sort.Strings(lineages)
 	for _, lineage := range lineages {
 		carried, existed := prior[lineage]
+		// guard:population authority-repair-removal too-tight: legitimate repair removals may leave pre-existing unchanged graph defects but must not introduce or alter a defect
 		if existed && carried.Error() == remaining[lineage].Error() {
 			continue
 		}

@@ -1956,6 +1956,7 @@ func runReviewFacadeFinalize(ctx context.Context, args []string, stdout io.Write
 	// Refused before any repository or authority work, so the rejection cannot
 	// advance the lineage or consume a lens slot. reviewUnadmittedResultRefusal
 	// records why this route is refused outright rather than admitted in place.
+	// guard:population finalize-result-admission too-loose: legitimate finalize results are provider-admitted artifacts or captured results; raw --result files are excluded
 	if len(resultPaths) != 0 {
 		return reviewPreflightError(errors.New(reviewUnadmittedResultRefusal))
 	}
@@ -2108,9 +2109,13 @@ func runReviewFacadeFinalize(ctx context.Context, args []string, stdout io.Write
 	// capture-evidence` call already bound to this exact authority. Consume it
 	// on the identical bytes path --captured-evidence uses, so the request is
 	// a real transition instead of a no-op (1663).
-	if len(evidence) == 0 && !*capturedEvidence && state.State == reviewtransaction.StateValidating {
-		if captured, captureErr := readCapturedFinalEvidence(store.Dir, state, record.Revision); captureErr == nil {
+	if len(evidence) == 0 && strings.TrimSpace(*evidencePath) == "" && !*capturedEvidence && state.State == reviewtransaction.StateValidating {
+		captured, captureErr := readCapturedFinalEvidence(store.Dir, state, record.Revision)
+		switch {
+		case captureErr == nil:
 			evidence = captured
+		case !errors.Is(captureErr, errCapturedFinalEvidenceMissing):
+			return reviewPreflightError(captureErr)
 		}
 	}
 	if terminalComplete {
