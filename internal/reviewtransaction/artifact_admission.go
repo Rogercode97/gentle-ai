@@ -145,8 +145,26 @@ func AdmitArtifact(request ArtifactAdmissionRequest) (LensResult, ArtifactAdmiss
 			"reviewer result echoed a different artifact subject: "+artifactRecaptureContinuation+
 				", which is "+request.ExpectedSubject.SubjectHash)
 	}
-	if _, err := request.FrozenContext.CandidateDiff.Bytes(); err != nil || request.FrozenContext.CandidateDiff.SHA256 != request.ExpectedSubject.CandidateDiffSHA256 {
-		return fail(ArtifactAdmissionBindingMismatch, "frozen candidate diff does not match the artifact subject")
+	// Bind the candidate the way the negotiated subject schema binds it.
+	// ValidateArtifactSubject above already rejected every other schema, and it
+	// enforces the two shapes as mutually exclusive: a v1 subject carries a
+	// candidate diff digest and blank trees, a v2 subject carries trees and no
+	// digest. Comparing trees unconditionally therefore failed EVERY v1 capture,
+	// because NewLegacyArtifactSubject blanks those fields on purpose to keep the
+	// published v1 preimage stable. The rejection lands before any store append,
+	// so the lens slot was never consumed and the collect loop re-offered the
+	// same slot until it gave up.
+	switch request.ExpectedSubject.Schema {
+	case ArtifactSubjectSchemaV1:
+		if request.FrozenContext.LegacyCandidateDiff == nil ||
+			request.FrozenContext.LegacyCandidateDiff.SHA256 != request.ExpectedSubject.CandidateDiffSHA256 {
+			return fail(ArtifactAdmissionBindingMismatch, "frozen candidate diff does not match the artifact subject")
+		}
+	default:
+		if request.FrozenContext.BaseTree != request.ExpectedSubject.BaseTree ||
+			request.FrozenContext.CandidateTree != request.ExpectedSubject.CandidateTree {
+			return fail(ArtifactAdmissionBindingMismatch, "frozen candidate trees do not match the artifact subject")
+		}
 	}
 	manifestDigest, err := ChangedPathManifestDigest(request.FrozenContext.ChangedPathManifest)
 	if err != nil || manifestDigest != request.ExpectedSubject.ChangedPathManifestSHA256 {
@@ -197,8 +215,8 @@ func AdmitArtifact(request ArtifactAdmissionRequest) (LensResult, ArtifactAdmiss
 		if evidenceReportsUnavailableInspection(evidence) {
 			return fail(ArtifactAdmissionIncomplete, "reviewer evidence reports that candidate inspection was unavailable")
 		}
-		if referenceOutsideScope(evidence, allowed, repository) {
-			return fail(ArtifactAdmissionOutOfScope, "reviewer evidence references a path outside the frozen candidate")
+		if referenceOutsideRepository(evidence, repository) {
+			return fail(ArtifactAdmissionOutOfScope, "reviewer evidence references a path outside the frozen repository")
 		}
 	}
 	for _, finding := range canonical.Findings {
@@ -216,8 +234,8 @@ func AdmitArtifact(request ArtifactAdmissionRequest) (LensResult, ArtifactAdmiss
 			return fail(ArtifactAdmissionOutOfScope, "reviewer finding location is outside the frozen candidate")
 		}
 		for _, proof := range finding.ProofRefs {
-			if referenceOutsideScope(proof, allowed, repository) {
-				return fail(ArtifactAdmissionOutOfScope, "reviewer proof references a path outside the frozen candidate")
+			if referenceOutsideRepository(proof, repository) {
+				return fail(ArtifactAdmissionOutOfScope, "reviewer proof references a path outside the frozen repository")
 			}
 		}
 		if !isSevereSeverity(finding.Severity) {
@@ -321,21 +339,18 @@ type artifactReferenceToken struct {
 	quoted bool
 }
 
-// referenceOutsideScope recognizes only canonical path:positive-line tokens
-// that name an immutable base/candidate repository path. Bare root names need
-// a dot; extensionless root paths remain available through quoting. This keeps
-// status:500 and digest/timestamp labels out of the path grammar while still
-// supporting nested, Unicode, and quoted-space Git paths.
-func referenceOutsideScope(value string, allowed, repository map[string]struct{}) bool {
+// referenceOutsideRepository recognizes canonical path:positive-line tokens
+// and requires each one to exist in the immutable base/candidate repository
+// universe. Bare root names need a dot; extensionless root paths remain
+// available through quoting. This keeps status:500 and digest/timestamp labels
+// out of the path grammar while rejecting malformed or unknown path claims.
+func referenceOutsideRepository(value string, repository map[string]struct{}) bool {
 	for _, token := range artifactReferenceTokens(value) {
 		path, known, malformed := artifactRepositoryPathReference(token, repository)
 		if malformed {
 			return true
 		}
-		if !known {
-			continue
-		}
-		if _, ok := allowed[path]; !ok {
+		if path != "" && !known {
 			return true
 		}
 	}

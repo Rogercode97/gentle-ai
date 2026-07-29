@@ -205,13 +205,15 @@ func (builder SnapshotBuilder) build(ctx context.Context, target Target, allowSt
 
 func (builder SnapshotBuilder) buildHeadWithIntended(ctx context.Context, intended []string) (string, string, error) {
 	tracked := 0
-	for _, logicalPath := range intended {
-		output, err := runGit(ctx, builder.Repo, nil, nil, "ls-tree", "-z", "HEAD", "--", literalPathspec(logicalPath))
+	if len(intended) > 0 {
+		entries, err := listTreeEntries(ctx, builder.Repo, "HEAD")
 		if err != nil {
 			return "", "", err
 		}
-		if len(output) > 0 {
-			tracked++
+		for _, logicalPath := range intended {
+			if _, present := entries[logicalPath]; present {
+				tracked++
+			}
 		}
 	}
 	if tracked != 0 && tracked != len(intended) {
@@ -874,12 +876,19 @@ func (builder *SnapshotBuilder) buildCurrentChanges(ctx context.Context, intende
 	}
 
 	stagedIntended := 0
-	for _, logicalPath := range intended {
-		if _, err := runGit(ctx, builder.Repo, nil, nil, "ls-files", "--error-unmatch", "--", literalPathspec(logicalPath)); err == nil {
-			if !allowStagedIntended {
-				return "", "", "", fmt.Errorf("intended-untracked path %q is already tracked", logicalPath)
+	if len(intended) > 0 {
+		trackedOutput, err := runGitInventory(ctx, builder.Repo, "ls-files", "--cached", "-z", "--")
+		if err != nil {
+			return "", "", "", err
+		}
+		tracked := nulSeparatedPathSet(trackedOutput)
+		for _, logicalPath := range intended {
+			if _, isTracked := tracked[logicalPath]; isTracked {
+				if !allowStagedIntended {
+					return "", "", "", fmt.Errorf("intended-untracked path %q is already tracked", logicalPath)
+				}
+				stagedIntended++
 			}
-			stagedIntended++
 		}
 	}
 	if stagedIntended > 0 && stagedIntended != len(intended) {
@@ -1076,14 +1085,26 @@ func (builder SnapshotBuilder) changedPaths(ctx context.Context, baseTree, candi
 }
 
 func (builder SnapshotBuilder) rejectIgnoredIntended(ctx context.Context, intended []string) error {
+	if len(intended) == 0 {
+		return nil
+	}
+	stdin := make([]byte, 0, len(intended)*32)
 	for _, logicalPath := range intended {
-		_, err := runGit(ctx, builder.Repo, nil, nil, "check-ignore", "--quiet", "--no-index", "--", logicalPath)
-		if err == nil {
-			return fmt.Errorf("intended-untracked path %q is ignored", logicalPath)
+		stdin = append(stdin, logicalPath...)
+		stdin = append(stdin, 0)
+	}
+	output, err := runGit(ctx, builder.Repo, nil, stdin, "check-ignore", "-z", "--stdin", "--no-index")
+	if err != nil {
+		var commandErr *GitCommandError
+		if errors.As(err, &commandErr) && commandErr.ExitCode == 1 {
+			return nil
 		}
-		var exitErr *exec.ExitError
-		if !errors.As(err, &exitErr) || exitErr.ExitCode() != 1 {
-			return err
+		return err
+	}
+	ignored := nulSeparatedPathSet(output)
+	for _, logicalPath := range intended {
+		if _, isIgnored := ignored[logicalPath]; isIgnored {
+			return fmt.Errorf("intended-untracked path %q is ignored", logicalPath)
 		}
 	}
 	return nil
@@ -1092,18 +1113,61 @@ func (builder SnapshotBuilder) rejectIgnoredIntended(ctx context.Context, intend
 func (builder SnapshotBuilder) untrackedProof(ctx context.Context, candidateTree string, intended []string) (string, error) {
 	hash := sha256.New()
 	hash.Write([]byte("gentle-ai.intended-untracked/v1\x00"))
+	if len(intended) == 0 {
+		return "sha256:" + hex.EncodeToString(hash.Sum(nil)), nil
+	}
+	entries, err := listTreeEntries(ctx, builder.Repo, candidateTree)
+	if err != nil {
+		return "", err
+	}
 	for _, logicalPath := range intended {
-		output, err := runGit(ctx, builder.Repo, nil, nil, "ls-tree", "-z", candidateTree, "--", literalPathspec(logicalPath))
-		if err != nil {
-			return "", err
-		}
-		if len(output) == 0 {
+		entry, present := entries[logicalPath]
+		if !present {
 			return "", fmt.Errorf("intended-untracked path %q is absent from candidate tree", logicalPath)
 		}
 		writeLengthPrefixed(hash, []byte(logicalPath))
-		writeLengthPrefixed(hash, output)
+		writeLengthPrefixed(hash, entry)
 	}
 	return "sha256:" + hex.EncodeToString(hash.Sum(nil)), nil
+}
+
+func listTreeEntries(ctx context.Context, repo, tree string) (map[string][]byte, error) {
+	output, err := runGitInventory(ctx, repo, "ls-tree", "-r", "-t", "-z", tree)
+	if err != nil {
+		return nil, err
+	}
+	return parseTreeEntries(output)
+}
+
+// parseTreeEntries preserves each complete ls-tree record, including its NUL,
+// so untracked proof bytes remain identical to the former per-path command.
+func parseTreeEntries(output []byte) (map[string][]byte, error) {
+	if len(output) > 0 && output[len(output)-1] != 0 {
+		return nil, errors.New("unexpected unterminated tree entry") // refusal:by-design world-action: truncated Git protocol output cannot be made trustworthy by a review command
+	}
+	entries := make(map[string][]byte)
+	for _, record := range bytes.Split(output, []byte{0}) {
+		if len(record) == 0 {
+			continue
+		}
+		tab := bytes.IndexByte(record, '\t')
+		if tab < 0 {
+			return nil, fmt.Errorf("unexpected tree entry %q", record) // refusal:by-design world-action: malformed Git protocol output cannot be made trustworthy by a review command
+		}
+		entry := append(append([]byte(nil), record...), 0)
+		entries[string(record[tab+1:])] = entry
+	}
+	return entries, nil
+}
+
+func nulSeparatedPathSet(output []byte) map[string]struct{} {
+	paths := make(map[string]struct{})
+	for _, record := range bytes.Split(output, []byte{0}) {
+		if len(record) > 0 {
+			paths[string(record)] = struct{}{}
+		}
+	}
+	return paths
 }
 
 func literalPathspec(logicalPath string) string {
@@ -1391,6 +1455,11 @@ func runGitLimited(ctx context.Context, repo string, extraEnv []string, stdin []
 }
 
 func runGitCaptured(ctx context.Context, repo string, extraEnv []string, stdin []byte, outputLimit int, isolateConfig, rejectStderr bool, args ...string) ([]byte, error) {
+	output, _, err := runGitCapturedRange(ctx, repo, extraEnv, stdin, 0, outputLimit, isolateConfig, rejectStderr, true, args...)
+	return output, err
+}
+
+func runGitCapturedRange(ctx context.Context, repo string, extraEnv []string, stdin []byte, outputOffset, outputLimit int, isolateConfig, rejectStderr, rejectOverflow bool, args ...string) ([]byte, int, error) {
 	remote := len(args) > 0 && args[0] == "ls-remote"
 	timeout := localGitCommandTimeout
 	if remote {
@@ -1408,7 +1477,7 @@ func runGitCaptured(ctx context.Context, repo string, extraEnv []string, stdin [
 	var combined, machineStdout, machineStderr bytes.Buffer
 	var stdout, stderr *boundedGitOutput
 	if outputLimit > 0 {
-		stdout = &boundedGitOutput{limit: outputLimit}
+		stdout = &boundedGitOutput{offset: outputOffset, limit: outputLimit}
 		stderr = &boundedGitOutput{limit: 64 << 10}
 		command.Stdout, command.Stderr = stdout, stderr
 	} else if rejectStderr {
@@ -1451,34 +1520,39 @@ func runGitCaptured(ctx context.Context, repo string, extraEnv []string, stdin [
 			if aggregate {
 				cause = ctx.Err()
 			}
-			return nil, &GitCommandTimeoutError{
+			return nil, 0, &GitCommandTimeoutError{
 				Args: append([]string{}, args...), Timeout: timeout, Remote: remote, Aggregate: aggregate, Cause: cause,
 			}
 		}
 		if startErr != nil {
-			return nil, &GitProcessControlError{Args: append([]string{}, args...), Cause: startErr}
+			return nil, 0, &GitProcessControlError{Args: append([]string{}, args...), Cause: startErr}
 		}
 		exitCode := -1
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {
 			exitCode = exitErr.ExitCode()
 		}
-		return nil, &GitCommandError{
+		return nil, 0, &GitCommandError{
 			Args: append([]string{}, args...), ExitCode: exitCode, Remote: remote, Cause: err,
 			Output: strings.TrimSpace(string(diagnostic)),
 		}
 	}
-	if stdout != nil && stdout.exceeded {
-		return nil, &GitOutputLimitError{Args: append([]string{}, args...), Limit: outputLimit, Actual: stdout.total}
+	if stdout != nil && stdout.exceeded && rejectOverflow {
+		return nil, 0, &GitOutputLimitError{Args: append([]string{}, args...), Limit: outputLimit, Actual: stdout.total}
 	}
 	if rejectStderr && len(diagnostic) != 0 {
-		return nil, fmt.Errorf("git inventory produced diagnostics: %s", strings.TrimSpace(string(diagnostic)))
+		return nil, 0, fmt.Errorf("git inventory produced diagnostics: %s", strings.TrimSpace(string(diagnostic)))
 	}
-	return output, nil
+	total := len(output)
+	if stdout != nil {
+		total = stdout.total
+	}
+	return output, total, nil
 }
 
 type boundedGitOutput struct {
 	buffer   bytes.Buffer
+	offset   int
 	limit    int
 	exceeded bool
 	// total counts every byte the child produced, including the bytes past
@@ -1490,7 +1564,16 @@ type boundedGitOutput struct {
 
 func (output *boundedGitOutput) Write(payload []byte) (int, error) {
 	written := len(payload)
+	start := output.total
 	output.total += written
+	if output.total <= output.offset {
+		return written, nil
+	}
+	payloadOffset := 0
+	if start < output.offset {
+		payloadOffset = output.offset - start
+	}
+	payload = payload[payloadOffset:]
 	remaining := output.limit - output.buffer.Len()
 	if remaining > 0 {
 		if remaining > len(payload) {
@@ -1521,7 +1604,11 @@ func sanitizedGitEnvironmentForRun(environment, extra []string, isolateConfig bo
 		"GIT_IMPLICIT_WORK_TREE":           {},
 		"GIT_INDEX_FILE":                   {},
 		"GIT_INTERNAL_SUPER_PREFIX":        {},
+		"GIT_ICASE_PATHSPECS":              {},
 		"GIT_NAMESPACE":                    {},
+		"GIT_LITERAL_PATHSPECS":            {},
+		"GIT_GLOB_PATHSPECS":               {},
+		"GIT_NOGLOB_PATHSPECS":             {},
 		"GIT_NO_REPLACE_OBJECTS":           {},
 		"GIT_OBJECT_DIRECTORY":             {},
 		"GIT_PREFIX":                       {},
@@ -1530,12 +1617,24 @@ func sanitizedGitEnvironmentForRun(environment, extra []string, isolateConfig bo
 		"GIT_SHALLOW_FILE":                 {},
 		"GIT_WORK_TREE":                    {},
 	}
+	processEssential := map[string]struct{}{
+		"COMSPEC": {}, "PATH": {}, "PATHEXT": {}, "SYSTEMDRIVE": {},
+		"SYSTEMROOT": {}, "TEMP": {}, "TMP": {}, "TMPDIR": {}, "WINDIR": {},
+	}
 	result := make([]string, 0, len(environment)+len(extra)+1)
 	for _, entry := range environment {
 		name, _, _ := strings.Cut(entry, "=")
-		_, remove := unsafe[name]
-		isolatedOverride := isolateConfig && (strings.HasPrefix(name, "GIT_CONFIG_") || strings.HasPrefix(name, "GIT_ATTR_") || name == "GIT_DIFF_OPTS")
-		if !remove && name != "LC_ALL" && !isolatedOverride {
+		canonicalName := strings.ToUpper(name)
+		_, remove := unsafe[canonicalName]
+		trace := strings.HasPrefix(canonicalName, "GIT_TRACE")
+		_, essential := processEssential[canonicalName]
+		if isolateConfig {
+			if essential && !strings.HasPrefix(canonicalName, "GIT_") {
+				result = append(result, entry)
+			}
+			continue
+		}
+		if !remove && !trace && canonicalName != "LC_ALL" {
 			result = append(result, entry)
 		}
 	}

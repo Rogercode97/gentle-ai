@@ -562,19 +562,45 @@ func TestOrganicBoundedCorrectionAllowsExactlyOne(t *testing.T) {
 	}
 
 	harness.writeFiles(map[string]string{path: organicLimitSource("fixed")})
-	validation := harness.writeJSON("validation.json", organicValidationResult{
-		OriginalCriteria:     organicValidationCheck{Passed: true, Evidence: []string{"the original acceptance test passed"}},
-		CorrectionRegression: organicValidationCheck{Passed: true, Evidence: []string{"the targeted regression test passed"}},
-		FollowUps:            []any{},
-	})
-	validating := harness.finalize(lineage, "--validation", validation)
-	if validating.State != organicStateValidating {
-		t.Fatalf("scoped correction did not reach validation: %#v", validating)
+	waiting := harnessCorrectionStatus(t, harness, lineage)
+	if waiting.NextTransition == nil || waiting.NextTransition.Kind != "collect" ||
+		waiting.NextTransition.ReasonCode != "correction_repository_verification_required" ||
+		waiting.NextTransition.Collect == nil || len(waiting.NextTransition.Collect.Inputs) != 1 {
+		t.Fatalf("corrected candidate did not request repository verification evidence: %#v", waiting)
 	}
-
-	approved := harness.finalize(lineage, "--evidence", harness.writeEvidence())
+	input := waiting.NextTransition.Collect.Inputs[0]
+	if input.CaptureOperation != "review.capture-evidence" {
+		t.Fatalf("correction evidence capture operation = %q", input.CaptureOperation)
+	}
+	var correctionTarget string
+	for _, argument := range input.Arguments {
+		if argument.Name == "target" {
+			correctionTarget = argument.Value
+		}
+	}
+	if correctionTarget == "" {
+		t.Fatalf("correction evidence transition omitted its candidate target: %#v", input)
+	}
+	harness.gentle(
+		"review", "capture-evidence", "--cwd", harness.repo.worktree, "--lineage", lineage,
+		"--target", correctionTarget, "--expected-revision", waiting.Authority.Revision,
+		"--outcome", "passed", "--input", harness.writeEvidence(),
+	)
+	ready := harnessCorrectionStatus(t, harness, lineage)
+	if ready.ValidationRequest == nil || ready.ValidationRequest.CorrectionTargetIdentity != correctionTarget ||
+		ready.NextTransition == nil || ready.NextTransition.Kind != "collect" || ready.NextTransition.ReasonCode != "targeted_validation_required" {
+		t.Fatalf("passed correction evidence did not expose the bound targeted-validation request: %#v", ready)
+	}
+	validation := harness.writeJSON("validation.json", organicValidationResult{
+		TargetedValidationRequestHash: ready.ValidationRequest.RequestHash,
+		CorrectionTargetIdentity:      ready.ValidationRequest.CorrectionTargetIdentity,
+		OriginalCriteria:              organicValidationCheck{Passed: true, Evidence: []string{"the original acceptance test passed"}},
+		CorrectionRegression:          organicValidationCheck{Passed: true, Evidence: []string{"the targeted regression test passed"}},
+		FollowUps:                     []any{},
+	})
+	approved := harness.finalize(lineage, "--validation", validation, "--captured-evidence")
 	if approved.State != organicStateApproved || approved.ReceiptPath == "" {
-		t.Fatalf("one bounded correction did not produce a terminal receipt: %#v", approved)
+		t.Fatalf("atomic correction acceptance did not produce a terminal receipt: %#v", approved)
 	}
 
 	before := harness.lineageDigest(lineage)
@@ -1170,7 +1196,7 @@ func (harness *organicHarness) captureReviewerResult(lineage string, started org
 	lens := started.SelectedLenses[order]
 	binding := []string{
 		"review", "capture-result", "--cwd", harness.repo.worktree, "--lineage", lineage,
-		"--target", started.TargetIdentity, "--lens", lens, "--order", strconv.Itoa(order),
+		"--target", started.targetIdentity(), "--lens", lens, "--order", strconv.Itoa(order),
 	}
 	var preflight organicCapturePreflight
 	if err := json.Unmarshal(harness.gentle(append(binding, "--preflight")...), &preflight); err != nil {
@@ -1660,9 +1686,25 @@ type organicStartResult struct {
 	ChangedLines     int      `json:"changed_lines"`
 	CorrectionBudget int      `json:"correction_budget"`
 	TargetIdentity   string   `json:"target_identity"`
+
+	Repository *organicStartRepositoryContext `json:"repository_context,omitempty"`
 	// Hint is the informational recovery pointer an empty-candidate start
 	// carries; the re-enable journey follows it verbatim.
 	Hint string `json:"hint"`
+}
+
+type organicStartRepositoryContext struct {
+	TargetIdentity string `json:"target_identity"`
+}
+
+func (result organicStartResult) targetIdentity() string {
+	if result.TargetIdentity != "" {
+		return result.TargetIdentity
+	}
+	if result.Repository != nil {
+		return result.Repository.TargetIdentity
+	}
+	return ""
 }
 
 type organicFinalizeResult struct {
@@ -1740,9 +1782,47 @@ type organicValidationCheck struct {
 }
 
 type organicValidationResult struct {
-	OriginalCriteria     organicValidationCheck `json:"original_criteria"`
-	CorrectionRegression organicValidationCheck `json:"correction_regression"`
-	FollowUps            []any                  `json:"follow_ups"`
+	TargetedValidationRequestHash string                 `json:"targeted_validation_request_hash,omitempty"`
+	CorrectionTargetIdentity      string                 `json:"correction_target_identity,omitempty"`
+	OriginalCriteria              organicValidationCheck `json:"original_criteria"`
+	CorrectionRegression          organicValidationCheck `json:"correction_regression"`
+	FollowUps                     []any                  `json:"follow_ups"`
+}
+
+type organicCorrectionStatus struct {
+	Authority struct {
+		Revision string `json:"revision"`
+	} `json:"authority"`
+	NextTransition *struct {
+		Kind       string `json:"kind"`
+		ReasonCode string `json:"reason_code"`
+		Collect    *struct {
+			Inputs []struct {
+				CaptureOperation string `json:"capture_operation"`
+				Arguments        []struct {
+					Name  string `json:"name"`
+					Value string `json:"value"`
+				} `json:"arguments"`
+			} `json:"inputs"`
+		} `json:"collect"`
+	} `json:"next_transition"`
+	ValidationRequest *struct {
+		RequestHash              string `json:"request_hash"`
+		CorrectionTargetIdentity string `json:"correction_target_identity"`
+	} `json:"validation_request"`
+}
+
+func harnessCorrectionStatus(t *testing.T, harness *organicHarness, lineage string) organicCorrectionStatus {
+	t.Helper()
+	payload := harness.gentle(
+		"review", "status", "--cwd", harness.repo.worktree, "--lineage", lineage,
+		"--contract", "gentle-ai.review-integration/v1", "--next-transition",
+	)
+	var status organicCorrectionStatus
+	if err := json.Unmarshal(payload, &status); err != nil {
+		t.Fatalf("decode correction status: %v\n%s", err, payload)
+	}
+	return status
 }
 
 // ---------------------------------------------------------------------------

@@ -13,8 +13,10 @@ import (
 
 const ReviewIntegrationStatusSchemaV1 = "gentle-ai.review-integration.status/v1"
 const ReviewIntegrationStatusSchemaIDV1 = "https://gentle-ai.dev/contracts/review-integration/v1/schemas/status.schema.json"
-const ReviewIntegrationStatusSchema = "gentle-ai.review-integration.status/v2"
-const ReviewIntegrationStatusSchemaID = "https://gentle-ai.dev/contracts/review-integration/v1/schemas/status-v2.schema.json"
+const ReviewIntegrationStatusSchemaV2 = "gentle-ai.review-integration.status/v2"
+const ReviewIntegrationStatusSchemaIDV2 = "https://gentle-ai.dev/contracts/review-integration/v1/schemas/status-v2.schema.json"
+const ReviewIntegrationStatusSchema = "gentle-ai.review-integration.status/v3"
+const ReviewIntegrationStatusSchemaID = "https://gentle-ai.dev/contracts/review-integration/v2/schemas/status.schema.json"
 const ReviewIntegrationProjectionSchema = "gentle-ai.review-integration.projection/v1"
 const ReviewIntegrationProjectionSchemaID = "https://gentle-ai.dev/contracts/review-integration/v1/schemas/projection.schema.json"
 
@@ -167,9 +169,13 @@ type ReviewTargetStatusProjection struct {
 	CurrentSnapshotIdentity string                       `json:"current_snapshot_identity"`
 }
 
-func newReviewTargetStatusResult(native reviewtransaction.TargetStatusResult) ReviewTargetStatusResult {
+func newReviewTargetStatusResultForContract(native reviewtransaction.TargetStatusResult, contract string) ReviewTargetStatusResult {
+	schema := ReviewIntegrationStatusSchema
+	if contract == ReviewIntegrationContractV1 {
+		schema = ReviewIntegrationStatusSchemaV2
+	}
 	result := ReviewTargetStatusResult{
-		Schema: ReviewIntegrationStatusSchema, Contract: ReviewIntegrationContractV1, Operation: "review.status",
+		Schema: schema, Contract: contract, Operation: "review.status",
 		Applicability: native.Applicability, Action: native.Action, ActionDisposition: native.ActionDisposition,
 		Replayability:  native.Replayability,
 		TargetIdentity: native.TargetIdentity,
@@ -306,7 +312,9 @@ func reviewStopEligibility(reason string, requiredInputs []string) *ReviewAction
 }
 
 func (result ReviewTargetStatusResult) Validate() error {
-	if result.Schema != ReviewIntegrationStatusSchema || result.Contract != ReviewIntegrationContractV1 || result.Operation != "review.status" {
+	legacyTransport := result.Schema == ReviewIntegrationStatusSchemaV2 && result.Contract == ReviewIntegrationContractV1
+	nativeGitTransport := result.Schema == ReviewIntegrationStatusSchema && result.Contract == ReviewIntegrationContractV2
+	if (!legacyTransport && !nativeGitTransport) || result.Operation != "review.status" {
 		return errors.New("invalid negotiated review status identity")
 	}
 	if !validReviewCapabilitySHA256(result.TargetIdentity) || result.Candidates == nil {
@@ -332,7 +340,9 @@ func (result ReviewTargetStatusResult) Validate() error {
 			retry.IncidentSchema != reviewtransaction.FinalVerificationIncidentSchema ||
 			retry.IncidentClass != reviewtransaction.FinalVerificationIncidentProceduralToolingFailure ||
 			retry.TargetIdentity != reviewAuthorityTargetIdentity(result) || !validReviewCapabilitySHA256(retry.ValidatingRevision) ||
-			!validReviewCapabilitySHA256(retry.FailedEvidenceHash) || !validReviewCapabilitySHA256(retry.FinalizeRequestDigest) {
+			!validReviewCapabilitySHA256(retry.FailedEvidenceHash) ||
+			retry.FailedEvidenceRecordDigest != "" && !validReviewCapabilitySHA256(retry.FailedEvidenceRecordDigest) ||
+			!validReviewCapabilitySHA256(retry.FinalizeRequestDigest) {
 			return errors.New("final-verification retry status metadata is invalid")
 		}
 	} else if result.Action == reviewtransaction.TargetStatusActionRetryFinalVerification {
@@ -351,8 +361,11 @@ func (result ReviewTargetStatusResult) Validate() error {
 			return err
 		}
 		transitionRequest := reviewTransitionValidationRequest(result.NextTransition)
-		if (transitionRequest == nil) != (result.ValidationRequest == nil) ||
-			transitionRequest != nil && !reflect.DeepEqual(*transitionRequest, *result.ValidationRequest) {
+		correctionEvidenceFirst := transitionRequest == nil && result.ValidationRequest != nil &&
+			(result.NextTransition.ReasonCode == "correction_repository_verification_required" ||
+				result.NextTransition.ReasonCode == "correction_repository_tooling_failed")
+		if !correctionEvidenceFirst && ((transitionRequest == nil) != (result.ValidationRequest == nil) ||
+			transitionRequest != nil && !reflect.DeepEqual(*transitionRequest, *result.ValidationRequest)) {
 			return errors.New("negotiated status validation request copies differ")
 		}
 	}
@@ -495,6 +508,9 @@ func (result ReviewTargetStatusResult) validateNextTransitionTargets() error {
 	expectedExecutionTarget := result.TargetIdentity
 	if result.Authority != nil && result.Authority.State == reviewtransaction.StateValidating {
 		expectedExecutionTarget = reviewAuthorityTargetIdentity(result)
+	} else if result.Authority != nil && result.Authority.State == reviewtransaction.StateCorrectionRequired &&
+		result.ValidationRequest != nil && result.NextTransition.ReasonCode == "correction_repository_tooling_failed" {
+		expectedExecutionTarget = result.ValidationRequest.CorrectionTargetIdentity
 	}
 	if result.NextTransition.Execute != nil && result.NextTransition.Execute.Binding.TargetIdentity != expectedExecutionTarget {
 		return errors.New("negotiated status execution target differs from the current target identity")
@@ -517,8 +533,12 @@ func (result ReviewTargetStatusResult) validateNextTransitionTargets() error {
 	}
 	for _, input := range result.NextTransition.Collect.Inputs {
 		if input.CaptureOperation == "review.capture-evidence" {
+			expectedTarget := reviewAuthorityTargetIdentity(result)
+			if result.Authority != nil && result.Authority.State == reviewtransaction.StateCorrectionRequired && result.ValidationRequest != nil {
+				expectedTarget = result.ValidationRequest.CorrectionTargetIdentity
+			}
 			arguments, err := reviewTransitionArgumentMap(input.Arguments)
-			if err != nil || arguments["target"] != reviewAuthorityTargetIdentity(result) {
+			if err != nil || arguments["target"] != expectedTarget {
 				return errors.New("negotiated status evidence target differs from the frozen authority target identity")
 			}
 			continue
@@ -531,6 +551,10 @@ func (result ReviewTargetStatusResult) validateNextTransitionTargets() error {
 			input.ArtifactSubject.TargetIdentity != result.Projection.InitialSnapshotIdentity || input.ChangedPathManifest == nil ||
 			!reflect.DeepEqual(manifestPathsForStatus(*input.ChangedPathManifest), result.Projection.Paths) {
 			return errors.New("negotiated status capture target differs from the frozen target identity")
+		}
+		if result.Contract == ReviewIntegrationContractV1 && (input.CandidateDiff == nil || input.BaseTree != "" || input.CandidateTree != "") ||
+			result.Contract == ReviewIntegrationContractV2 && (input.CandidateDiff != nil || input.BaseTree != result.Projection.BaseTree || input.CandidateTree != result.Projection.InitialReviewTree) {
+			return errors.New("negotiated status capture transport differs from its contract") // refusal:by-design world-action: provider-built STATUS mixed negotiated transports and requires a code fix
 		}
 	}
 	return nil
@@ -660,6 +684,9 @@ func (result ReviewTargetStatusResult) validateFinalVerificationRetryNextTransit
 		"incident-schema":               retry.IncidentSchema,
 		"incident-class":                retry.IncidentClass,
 	}
+	if retry.FailedEvidenceRecordDigest != "" {
+		want["failed-evidence-record-digest"] = retry.FailedEvidenceRecordDigest
+	}
 	if err != nil || input.Name != "final_verification_retry_authorization" ||
 		input.Schema != reviewtransaction.FinalVerificationRetryAuthorizationSchema ||
 		input.CaptureOperation != "external.authorize_final_verification_retry" || !reflect.DeepEqual(arguments, want) {
@@ -777,10 +804,19 @@ func (transition ReviewNextTransition) Validate() error {
 			}
 			if input.CaptureOperation == "review.capture-result" {
 				order, orderErr := strconv.Atoi(arguments["order"])
-				if len(arguments) != 6 || !reviewStartSupportedLens(arguments["lens"]) || orderErr != nil || order < 0 ||
+				legacyTransport := input.ArtifactSubject != nil && input.ArtifactSubject.Schema == reviewtransaction.ArtifactSubjectSchemaV1
+				nativeGitTransport := input.ArtifactSubject != nil && input.ArtifactSubject.Schema == reviewtransaction.ArtifactSubjectSchema
+				argumentCount := 6
+				if nativeGitTransport {
+					argumentCount = 7
+				}
+				if len(arguments) != argumentCount || !reviewStartSupportedLens(arguments["lens"]) || orderErr != nil || order < 0 ||
 					!validReviewCapabilitySHA256(arguments["expected-revision"]) || !validReviewCapabilitySHA256(arguments["target"]) ||
 					strings.TrimSpace(arguments["lineage"]) == "" || reviewtransaction.ValidateReviewRepositoryContextHandle(arguments["repository-context"]) != nil ||
-					input.ArtifactSubject == nil || input.CandidateDiff == nil || input.ChangedPathManifest == nil {
+					input.ArtifactSubject == nil || input.ChangedPathManifest == nil ||
+					nativeGitTransport && arguments["subject-hash"] != input.ArtifactSubject.SubjectHash ||
+					legacyTransport && input.CandidateDiff == nil || nativeGitTransport && (!validReviewGitTree(input.BaseTree) || !validReviewGitTree(input.CandidateTree)) ||
+					(!legacyTransport && !nativeGitTransport) {
 					return errors.New("review capture transition lacks an exact repository and authority binding")
 				}
 				subject := input.ArtifactSubject
@@ -788,14 +824,26 @@ func (transition ReviewNextTransition) Validate() error {
 				if reviewtransaction.ValidateArtifactSubject(*subject) != nil || manifestErr != nil ||
 					subject.LineageID != arguments["lineage"] || subject.AuthorityRevision != arguments["expected-revision"] ||
 					subject.TargetIdentity != arguments["target"] || subject.Lens != arguments["lens"] || subject.SelectedOrder != order ||
-					subject.CandidateDiffSHA256 != input.CandidateDiff.SHA256 || subject.ChangedPathManifestSHA256 != manifestDigest {
+					subject.ChangedPathManifestSHA256 != manifestDigest ||
+					legacyTransport && subject.CandidateDiffSHA256 != input.CandidateDiff.SHA256 ||
+					nativeGitTransport && (subject.BaseTree != input.BaseTree || subject.CandidateTree != input.CandidateTree) {
 					return errors.New("review capture transition frozen subject or candidate context is invalid")
 				}
-				if _, err := input.CandidateDiff.Bytes(); err != nil {
-					return errors.New("review capture transition candidate diff is invalid")
+				if legacyTransport {
+					if _, diffErr := input.CandidateDiff.Bytes(); diffErr != nil || input.BaseTree != "" || input.CandidateTree != "" {
+						return errors.New("review capture transition legacy candidate diff is invalid") // refusal:by-design world-action: provider-built v1 transition contains invalid immutable transport and requires a code fix
+					}
+				} else if input.CandidateDiff != nil {
+					return errors.New("review capture transition native Git context contains a legacy candidate diff") // refusal:by-design world-action: provider-built v2 transition leaked legacy transport and requires a code fix
 				}
-			} else if input.ArtifactSubject != nil || input.CandidateDiff != nil || input.ChangedPathManifest != nil {
+			} else if input.ArtifactSubject != nil || input.CandidateDiff != nil || input.BaseTree != "" || input.CandidateTree != "" || input.ChangedPathManifest != nil {
 				return errors.New("non-reviewer collection transition contains frozen reviewer context")
+			}
+			if input.CaptureOperation == "review.capture-evidence" &&
+				(input.Schema != reviewtransaction.VerificationEvidenceRecordSchema || len(arguments) != 3 ||
+					strings.TrimSpace(arguments["lineage"]) == "" || !validReviewCapabilitySHA256(arguments["expected-revision"]) ||
+					!validReviewCapabilitySHA256(arguments["target"])) {
+				return errors.New("verification evidence capture transition lacks an exact authority and candidate binding") // refusal:by-design world-action: only a producer-code repair can make a malformed machine transition trustworthy
 			}
 			if input.CaptureOperation == "external.run_targeted_validation" && input.ValidationRequest == nil {
 				return errors.New("targeted validation transition lacks its provider-owned request")

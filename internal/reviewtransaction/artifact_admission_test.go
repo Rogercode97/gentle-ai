@@ -88,14 +88,14 @@ func TestAdmitArtifactRequiresCompletedBoundInScopeInspection(t *testing.T) {
 			r.FrozenContext.repositoryPaths = []string{"internal/a.go"}
 		}, decision: ArtifactAdmissionBindingMismatch},
 		{name: "out of scope finding", mutate: func(r *ArtifactAdmissionRequest) { r.Result.Findings[0].Location = "unrelated/old.go:3" }, decision: ArtifactAdmissionOutOfScope},
-		{name: "out of scope proof", mutate: func(r *ArtifactAdmissionRequest) {
-			r.Result.Findings[0].ProofRefs = []string{"diff: unrelated/old.go:3"}
+		{name: "unknown repository proof", mutate: func(r *ArtifactAdmissionRequest) {
+			r.Result.Findings[0].ProofRefs = []string{"diff: missing/old.go:3"}
 		}, decision: ArtifactAdmissionOutOfScope},
-		{name: "root path evidence outside scope", mutate: func(r *ArtifactAdmissionRequest) {
-			r.Result.Evidence = append(r.Result.Evidence, "diff: secret.go:42")
+		{name: "unknown repository evidence", mutate: func(r *ArtifactAdmissionRequest) {
+			r.Result.Evidence = append(r.Result.Evidence, "diff: missing.go:42")
 		}, decision: ArtifactAdmissionOutOfScope},
-		{name: "root path proof outside scope", mutate: func(r *ArtifactAdmissionRequest) {
-			r.Result.Findings[0].ProofRefs = []string{"diff: secret.go:42"}
+		{name: "non-canonical repository proof", mutate: func(r *ArtifactAdmissionRequest) {
+			r.Result.Findings[0].ProofRefs = []string{"diff: ./secret.go:42"}
 		}, decision: ArtifactAdmissionOutOfScope},
 		{name: "non ASCII finding id", mutate: func(r *ArtifactAdmissionRequest) {
 			r.Result.Findings[0].ID = "R3-é"
@@ -110,6 +110,92 @@ func TestAdmitArtifactRequiresCompletedBoundInScopeInspection(t *testing.T) {
 				t.Fatalf("AdmitArtifact() decision = %q, error = %v; want %q", admission.Decision, err, tc.decision)
 			}
 		})
+	}
+}
+
+// legacyAdmittedArtifactFixture rebinds the shared admission fixture onto a
+// negotiated review-integration/v1 subject, whose identity is the rendered
+// candidate diff rather than the frozen Git trees.
+func legacyAdmittedArtifactFixture(t *testing.T) ArtifactAdmissionRequest {
+	t.Helper()
+	state, revision, frozen := artifactSubjectFixture(t)
+	diff, err := NewFrozenCandidateDiff([]byte("diff --git a/internal/a.go b/internal/a.go\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	frozen.LegacyCandidateDiff = &diff
+	subject, err := NewLegacyArtifactSubject(state, revision, frozen, LensReliability, 0, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, request := admittedArtifactFixture(t)
+	request.ExpectedSubject, request.FrozenContext = subject, frozen
+	request.EchoedSubjectHash = subject.SubjectHash
+	return request
+}
+
+// A v1 subject carries no trees by construction, so admission has to bind it
+// through the candidate diff digest. Comparing the blanked trees against the
+// frozen context rejected every legacy capture before it could consume its lens
+// slot, leaving the collect loop to re-offer the same slot forever.
+func TestAdmitArtifactBindsLegacySubjectByCandidateDiff(t *testing.T) {
+	request := legacyAdmittedArtifactFixture(t)
+	canonical, admission, err := AdmitArtifact(request)
+	if err != nil {
+		t.Fatalf("AdmitArtifact() error = %v (decision %q, diagnostic %q)", err, admission.Decision, admission.Diagnostic)
+	}
+	if admission.Decision != ArtifactAdmissionCompleted || admission.ResultHash != canonical.ResultHash {
+		t.Fatalf("admission = %#v, canonical = %#v", admission, canonical)
+	}
+	if err := admission.Validate(request.ExpectedSubject); err != nil {
+		t.Fatalf("admission.Validate() error = %v", err)
+	}
+
+	tests := []struct {
+		name   string
+		mutate func(*ArtifactAdmissionRequest)
+	}{
+		{name: "legacy transport absent", mutate: func(r *ArtifactAdmissionRequest) {
+			r.FrozenContext.LegacyCandidateDiff = nil
+		}},
+		{name: "legacy transport rerendered", mutate: func(r *ArtifactAdmissionRequest) {
+			other, err := NewFrozenCandidateDiff([]byte("diff --git a/internal/b.go b/internal/b.go\n"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			r.FrozenContext.LegacyCandidateDiff = &other
+		}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			candidate := legacyAdmittedArtifactFixture(t)
+			tc.mutate(&candidate)
+			_, admission, err := AdmitArtifact(candidate)
+			if err == nil || admission.Decision != ArtifactAdmissionBindingMismatch {
+				t.Fatalf("AdmitArtifact() decision = %q, error = %v; want %q",
+					admission.Decision, err, ArtifactAdmissionBindingMismatch)
+			}
+		})
+	}
+}
+
+func TestAdmitArtifactAllowsSupportingProofOutsideChangedManifest(t *testing.T) {
+	_, _, request := admittedArtifactFixture(t)
+	request.Result.Evidence = append(request.Result.Evidence, "supporting implementation: internal/secret.go:7")
+	request.Result.Findings[0].ProofRefs = []string{"repository proof: secret.go:42"}
+
+	canonical, admission, err := AdmitArtifact(request)
+	if err != nil || admission.Decision != ArtifactAdmissionCompleted {
+		t.Fatalf("AdmitArtifact() = %q, %v; want completed", admission.Decision, err)
+	}
+	if stringIndex(canonical.Evidence, "supporting implementation: internal/secret.go:7") < 0 ||
+		!equalStrings(canonical.Findings[0].ProofRefs, request.Result.Findings[0].ProofRefs) {
+		t.Fatalf("supporting repository proof was not preserved: %#v", canonical)
+	}
+
+	request.Inspection.Paths = append(request.Inspection.Paths, "internal/secret.go")
+	if _, rejected, err := AdmitArtifact(request); err == nil || rejected.Decision != ArtifactAdmissionOutOfScope {
+		t.Fatalf("external proof path became an inspectable candidate path: decision=%q error=%v", rejected.Decision, err)
 	}
 }
 
@@ -190,13 +276,7 @@ func TestAdmitArtifactOmittedSubjectDiagnosticNamesContinuation(t *testing.T) {
 	}
 }
 
-func TestReferenceOutsideScopeRecognizesOnlyStructuredRepositoryPaths(t *testing.T) {
-	allowed := map[string]struct{}{
-		"docs/naïve guide.md": {},
-		"internal/a.go":       {},
-		"main.go":             {},
-		"Makefile":            {},
-	}
+func TestReferenceOutsideRepositoryRecognizesOnlyCanonicalRepositoryPaths(t *testing.T) {
 	repository := map[string]struct{}{}
 	for _, logicalPath := range []string{
 		"Dockerfile", "Makefile", "docs/naïve guide.md", "docs/秘密 guide.md", "internal/a.go",
@@ -210,25 +290,28 @@ func TestReferenceOutsideScopeRecognizesOnlyStructuredRepositoryPaths(t *testing
 		outside bool
 	}{
 		{name: "root path in scope", value: "main.go:42"},
-		{name: "root path outside scope", value: "secret.go:42", outside: true},
+		{name: "root supporting path", value: "secret.go:42"},
 		{name: "nested path in scope", value: "diff: internal/a.go:7"},
-		{name: "nested path outside scope", value: "diff: internal/secret.go:7", outside: true},
+		{name: "nested supporting path", value: "diff: internal/secret.go:7"},
 		{name: "quoted unicode and spaces in scope", value: "reviewed \"docs/naïve guide.md:9\""},
-		{name: "quoted unicode and spaces outside scope", value: "reviewed \"docs/秘密 guide.md:9\"", outside: true},
+		{name: "quoted unicode and spaces supporting", value: "reviewed \"docs/秘密 guide.md:9\""},
 		{name: "quoted extensionless root in scope", value: "reviewed `Makefile:12`"},
-		{name: "quoted extensionless root outside scope", value: "reviewed `Dockerfile:12`", outside: true},
+		{name: "quoted extensionless root supporting", value: "reviewed `Dockerfile:12`"},
 		{name: "sha256 digest", value: "sha256:1234567890123456789012345678901234567890123456789012345678901234"},
 		{name: "timestamp", value: "2026-07-22T12:34:56Z"},
 		{name: "timestamp without zone", value: "2026-07-22T12:34:56"},
 		{name: "numeric status", value: "status:500"},
-		{name: "filename token absent from repository", value: "not-in-repository.go:42"},
+		{name: "filename token absent from repository", value: "not-in-repository.go:42", outside: true},
+		{name: "absolute path", value: "/tmp/secret.go:42", outside: true},
+		{name: "traversal path", value: "../secret.go:42", outside: true},
+		{name: "non-canonical path", value: "./secret.go:42", outside: true},
 		{name: "https URL", value: "https://example.test/internal/secret.go:42"},
 		{name: "URL port", value: "http://127.0.0.1:8080/path"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := referenceOutsideScope(tt.value, allowed, repository); got != tt.outside {
-				t.Fatalf("referenceOutsideScope(%q) = %v, want %v", tt.value, got, tt.outside)
+			if got := referenceOutsideRepository(tt.value, repository); got != tt.outside {
+				t.Fatalf("referenceOutsideRepository(%q) = %v, want %v", tt.value, got, tt.outside)
 			}
 		})
 	}

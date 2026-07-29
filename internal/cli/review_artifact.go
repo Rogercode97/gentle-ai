@@ -42,11 +42,12 @@ var reviewerResultSlotConflictError = errors.New("captured reviewer result alrea
 var errCapturedFinalEvidenceMissing = errors.New("captured final evidence is unavailable or unsafe")
 
 func RunReviewCaptureEvidence(args []string, stdout io.Writer) error {
-	flags := newReviewFlagSet("review capture-evidence", stdout, "Capture final verification evidence bound to one validating compact authority.")
+	flags := newReviewFlagSet("review capture-evidence", stdout, "Capture outcome-bearing verification evidence bound to one compact authority and candidate.")
 	cwd := flags.String("cwd", ".", "repository path")
 	lineage := flags.String("lineage", "", "exact review lineage identifier")
 	target := flags.String("target", "", "exact frozen target identity")
-	revision := flags.String("expected-revision", "", "exact validating authority revision")
+	revision := flags.String("expected-revision", "", "exact validating or correction authority revision")
+	outcome := flags.String("outcome", "", "closed verification outcome: passed, verification_failed, or procedural_tooling_failed")
 	input := flags.String("input", "", "final verification evidence file or - for stdin")
 	if err := parseReviewFlags(flags, args); err != nil {
 		return err
@@ -54,8 +55,8 @@ func RunReviewCaptureEvidence(args []string, stdout io.Writer) error {
 	if reviewHelpRequested(args) {
 		return nil
 	}
-	if flags.NArg() != 0 || strings.TrimSpace(*lineage) == "" || strings.TrimSpace(*target) == "" || strings.TrimSpace(*revision) == "" || strings.TrimSpace(*input) == "" {
-		return reviewPreflightError(errors.New("review capture-evidence requires exact --cwd, --lineage, --target, --expected-revision, and --input"))
+	if flags.NArg() != 0 || strings.TrimSpace(*lineage) == "" || strings.TrimSpace(*target) == "" || strings.TrimSpace(*revision) == "" || strings.TrimSpace(*outcome) == "" || strings.TrimSpace(*input) == "" {
+		return reviewPreflightError(errors.New("review capture-evidence requires exact --cwd, --lineage, --target, --expected-revision, --outcome, and --input")) // refusal:by-design operator-knowledge: the current STATUS transition supplies the authority-bound values and the verifier supplies the outcome and input
 	}
 	ctx := context.Background()
 	root, err := resolveReviewMutationRoot(ctx, *cwd)
@@ -67,82 +68,77 @@ func RunReviewCaptureEvidence(args []string, stdout io.Writer) error {
 		return reviewPreflightError(err)
 	}
 	state := record.State
-	if state.State != reviewtransaction.StateValidating || state.CurrentSnapshot.Identity != *target || record.Revision != *revision {
-		return reviewPreflightError(errors.New("final evidence binding does not match the current validating authority"))
+	if record.Revision != *revision {
+		return reviewPreflightError(errors.New("verification evidence binding does not match the current authority revision")) // refusal:by-design operator-knowledge: only a fresh STATUS transition can identify the current immutable revision
+	}
+	evidenceTarget, err := facadeVerificationEvidenceTarget(ctx, root, state, record.Revision)
+	if err != nil || evidenceTarget.Identity != *target {
+		return reviewPreflightError(errors.New("verification evidence binding does not match the current validating or correction authority")) // refusal:by-design operator-knowledge: the evidence producer must use the exact target emitted by the current STATUS transition
 	}
 	payload, err := readFacadeBytes(*input)
 	if err != nil || len(payload) == 0 || len(payload) > reviewResultArtifactLimit {
 		return reviewPreflightError(errors.New("final verification evidence is required"))
 	}
-	dir := filepath.Join(store.Dir, reviewtransaction.CompactFinalEvidenceDir)
-	if err := ensureReviewerArtifactDir(dir); err != nil {
-		return err
-	}
-	path := filepath.Join(dir, reviewtransaction.CompactFinalEvidenceFile)
-	if existing, readErr := os.ReadFile(path); readErr == nil {
-		if !bytes.Equal(existing, payload) {
-			// Confirmed genuine deadlock (organic-dx tasks.md 3b.9): no
-			// dispose-evidence-shaped command exists for "I captured the
-			// wrong final evidence and want to submit different bytes for
-			// this exact target/revision." A defect report is this fault's
-			// designed exit for this release; the Tier C clause names it.
-			baseMessage := "captured final evidence already exists with different bytes"
+	captured, err := reviewtransaction.PublishCapturedVerificationEvidence(reviewtransaction.CaptureVerificationEvidenceRequest{
+		StoreDir: store.Dir, LineageID: state.LineageID, AuthorityRevision: record.Revision,
+		Target: evidenceTarget, Payload: payload, Outcome: reviewtransaction.VerificationOutcome(*outcome),
+	})
+	if err != nil {
+		if errors.Is(err, reviewtransaction.ErrCapturedVerificationEvidenceConflict) {
+			baseMessage := "captured verification evidence already exists with different bytes or outcome"
 			clause := reviewGenerateToolFaultDefectReport(ctx, root, reviewDefectReportInput{
-				Operation:            "review capture-evidence --lineage --target --expected-revision --input",
+				Operation:            "review capture-evidence --lineage --target --expected-revision --outcome --input",
 				ReasonCode:           "captured_final_evidence_conflict",
 				ErrorMessage:         baseMessage,
-				TerminalPrecondition: "final verification evidence was already captured for this validating target and revision with different bytes; there is no command to replace it",
+				TerminalPrecondition: "verification evidence was already captured for this authority and candidate with different immutable content",
 				StateIdentifiers:     map[string]string{"state": string(state.State), "target": *target, "revision": *revision},
 			})
 			return reviewPreflightError(fmt.Errorf("%s.%s", baseMessage, clause))
 		}
-	} else if !os.IsNotExist(readErr) {
-		return readErr
-	} else {
-		temp, createErr := os.CreateTemp(dir, ".capture-*")
-		if createErr != nil {
-			return createErr
-		}
-		owned, _ := temp.Stat()
-		defer removeOwnedArtifact(temp.Name(), owned)
-		if err := temp.Chmod(0o600); err != nil {
-			return err
-		}
-		if _, err := temp.Write(payload); err != nil {
-			return err
-		}
-		if err := temp.Sync(); err != nil {
-			return err
-		}
-		if err := temp.Close(); err != nil {
-			return err
-		}
-		if err := reviewtransaction.PublishFileNoReplace(temp.Name(), path); err != nil {
-			if existing, readErr := os.ReadFile(path); readErr != nil || !bytes.Equal(existing, payload) {
-				return err
-			}
-		}
-		if err := syncReviewerArtifactDirectoryCompatible(dir); err != nil {
-			return err
-		}
+		return reviewPreflightError(err)
 	}
-	return encodeReviewJSON(stdout, map[string]any{"schema": "gentle-ai.review-verification-evidence/v1", "capability": "review.native_final_evidence", "sha256": facadePayloadHash(payload), "lineage_id": state.LineageID, "target_identity": state.CurrentSnapshot.Identity, "revision": record.Revision})
+	return encodeReviewJSON(stdout, captured.Record)
 }
 
-func readCapturedFinalEvidence(storeDir string, state reviewtransaction.CompactState, revision string) ([]byte, error) {
-	path := filepath.Join(storeDir, reviewtransaction.CompactFinalEvidenceDir, reviewtransaction.CompactFinalEvidenceFile)
-	info, err := os.Lstat(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil, errCapturedFinalEvidenceMissing
+func facadeVerificationEvidenceTarget(ctx context.Context, repo string, state reviewtransaction.CompactState, revision string) (reviewtransaction.Snapshot, error) {
+	switch state.State {
+	case reviewtransaction.StateValidating:
+		return state.CurrentSnapshot, nil
+	case reviewtransaction.StateCorrectionRequired:
+		if state.ProposedCorrectionLines == nil {
+			return reviewtransaction.Snapshot{}, errors.New("verification evidence requires a forecasted correction") // refusal:by-design operator-knowledge: correction planning is an external prerequisite whose exact line forecast must be finalized first
+		}
+		if err := rejectFacadeCorrectionUntracked(ctx, repo, state); err != nil {
+			return reviewtransaction.Snapshot{}, err
+		}
+		projection := state.InitialSnapshot.Projection
+		if projection == "" {
+			projection = reviewtransaction.ProjectionWorkspace
+		}
+		fix, err := (reviewtransaction.SnapshotBuilder{Repo: repo}).Build(ctx, reviewtransaction.Target{
+			Kind: reviewtransaction.TargetFixDiff, Projection: projection, BaseRef: state.CurrentSnapshot.CandidateTree,
+			IntendedUntracked: state.InitialSnapshot.IntendedUntracked, LedgerIDs: state.FixFindingIDs,
+		})
+		if err != nil {
+			return reviewtransaction.Snapshot{}, err
+		}
+		request, err := reviewtransaction.BuildTargetedValidationRequest(ctx, repo, state, revision)
+		if err != nil || request.CorrectionTargetIdentity != fix.Identity || request.CorrectionCandidateTree != fix.CandidateTree ||
+			request.CorrectionPathsDigest != fix.PathsDigest {
+			return reviewtransaction.Snapshot{}, errors.New("correction candidate changed while binding verification evidence") // refusal:by-design world-action: concurrent candidate mutation invalidated the snapshot and a stable candidate is required before capture
+		}
+		return fix, nil
+	default:
+		return reviewtransaction.Snapshot{}, fmt.Errorf("cannot capture verification evidence from compact state %q", state.State) // refusal:by-design world-action: this persisted lifecycle state has no verification-capture transition
 	}
-	if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || !reviewArtifactModeSafe(info.Mode(), false) {
-		return nil, errors.New("captured final evidence is unavailable or unsafe")
+}
+
+func readCapturedFinalEvidence(storeDir string, state reviewtransaction.CompactState, revision string) (reviewtransaction.CapturedVerificationEvidence, error) {
+	captured, err := reviewtransaction.ReadCapturedVerificationEvidence(storeDir, state.LineageID, revision, state.CurrentSnapshot)
+	if errors.Is(err, reviewtransaction.ErrCapturedVerificationEvidenceMissing) {
+		return reviewtransaction.CapturedVerificationEvidence{}, errCapturedFinalEvidenceMissing
 	}
-	payload, err := os.ReadFile(path)
-	if err != nil || len(payload) == 0 || len(payload) > reviewResultArtifactLimit {
-		return nil, errors.New("captured final evidence is invalid")
-	}
-	return payload, nil
+	return captured, err
 }
 
 type reviewResultArtifact struct {
@@ -232,6 +228,7 @@ func RunReviewCaptureResult(args []string, stdout io.Writer) error {
 	lens := flags.String("lens", "", "exact selected lens")
 	order := flags.Int("order", -1, "zero-based selected lens order")
 	revision := flags.String("expected-revision", "", "exact reviewing authority revision")
+	subjectHash := flags.String("subject-hash", "", "provider-issued artifact subject hash for native-Git context")
 	input := flags.String("input", "", "raw reviewer result JSON file or - for stdin; `gentle-ai review schema reviewer` emits the schema and a working example")
 	preflight := flags.Bool("preflight", false, "verify the capture binding against the current reviewing authority without reading or persisting any result")
 	if err := parseReviewFlags(flags, args); err != nil {
@@ -293,7 +290,7 @@ func RunReviewCaptureResult(args []string, stdout io.Writer) error {
 	if state.State != reviewtransaction.StateReviewing || state.LineageID != *lineage || state.InitialSnapshot.Identity != *target ||
 		(strings.TrimSpace(*revision) != "" && record.Revision != *revision) || *order >= len(state.SelectedLenses) || state.SelectedLenses[*order] != *lens {
 		if contextHandle != "" {
-			return reviewPreflightError(fmt.Errorf("capture binding does not match the current reviewing authority under the provider-issued repository context; ask the parent orchestrator to refresh the exact native next transition by running %s", reviewNextTransitionRefreshCommand))
+			return reviewPreflightError(fmt.Errorf("capture binding does not match the current reviewing authority under the provider-issued repository context; ask the parent orchestrator to refresh the exact native next transition by running %s", reviewNextTransitionRefreshCommandV2))
 		}
 		return reviewPreflightError(fmt.Errorf("capture binding does not match the current reviewing authority under repository %q; verify the frozen lineage, target, lens, and order for that repository, or re-run with --cwd set to the repository where the review was started", root))
 	}
@@ -306,6 +303,17 @@ func RunReviewCaptureResult(args []string, stdout io.Writer) error {
 		return reviewPreflightError(fmt.Errorf("derive reviewer artifact subject: %w", err))
 	}
 	if *preflight {
+		if *subjectHash != "" && *subjectHash != subject.SubjectHash {
+			legacyFrozen, legacyErr := (reviewtransaction.SnapshotBuilder{Repo: root}).WithLegacyCandidateDiff(ctx, state.InitialSnapshot, frozen)
+			if legacyErr != nil {
+				return reviewPreflightError(errors.New("review capture preflight subject hash does not match the provider-owned authority; refresh the binding with gentle-ai review status --cwd <repo> --contract <same-contract> --next-transition"))
+			}
+			legacySubject, legacyErr := reviewtransaction.NewLegacyArtifactSubject(state, record.Revision, legacyFrozen, *lens, *order, "")
+			if legacyErr != nil || *subjectHash != legacySubject.SubjectHash {
+				return reviewPreflightError(errors.New("review capture preflight subject hash does not match the provider-owned authority; refresh the binding with gentle-ai review status --cwd <repo> --contract <same-contract> --next-transition"))
+			}
+			frozen, subject = legacyFrozen, legacySubject
+		}
 		publicRoot := root
 		if contextHandle != "" {
 			publicRoot = ""
@@ -313,7 +321,7 @@ func RunReviewCaptureResult(args []string, stdout io.Writer) error {
 		return encodeReviewJSON(stdout, reviewCapturePreflightResult{
 			Schema: reviewCapturePreflightSchema, Capability: reviewCapturePreflightCapability, RepositoryRoot: publicRoot,
 			LineageID: state.LineageID, TargetIdentity: state.InitialSnapshot.Identity, Lens: *lens, SelectedOrder: *order,
-			ArtifactSubject: subject, CandidateDiff: frozen.CandidateDiff,
+			ArtifactSubject: subject, BaseTree: frozen.BaseTree, CandidateTree: frozen.CandidateTree,
 			ChangedPathManifest: append([]reviewtransaction.ChangedPathManifestEntry{}, frozen.ChangedPathManifest...),
 		})
 	}
@@ -334,6 +342,15 @@ func RunReviewCaptureResult(args []string, stdout io.Writer) error {
 	}
 	if result.Findings == nil || result.Evidence == nil {
 		return reviewPreflightError(errors.New("reviewer result requires explicit findings and evidence arrays"))
+	}
+	if result.SubjectHash != subject.SubjectHash {
+		legacyFrozen, legacyErr := (reviewtransaction.SnapshotBuilder{Repo: root}).WithLegacyCandidateDiff(ctx, state.InitialSnapshot, frozen)
+		if legacyErr == nil {
+			legacySubject, subjectErr := reviewtransaction.NewLegacyArtifactSubject(state, record.Revision, legacyFrozen, *lens, *order, "")
+			if subjectErr == nil && result.SubjectHash == legacySubject.SubjectHash {
+				frozen, subject = legacyFrozen, legacySubject
+			}
+		}
 	}
 	if _, err := prepareCompactReviewerResults(reviewtransaction.CompactState{SelectedLenses: []string{*lens}}, []facadeReviewerResult{result}, facadeRefuterResult{}); err != nil {
 		return reviewPreflightError(err)
@@ -369,8 +386,12 @@ func RunReviewCaptureResult(args []string, stdout io.Writer) error {
 	if err != nil {
 		return reviewPreflightError(err)
 	}
+	envelopeSchema := reviewAdmittedResultSchema
+	if subject.Schema == reviewtransaction.ArtifactSubjectSchemaV1 {
+		envelopeSchema = reviewtransaction.AdmittedReviewerResultSchemaV1
+	}
 	envelope, err := json.Marshal(admittedReviewerResult{
-		Schema: reviewAdmittedResultSchema, Subject: subject, Admission: admission, Result: result,
+		Schema: envelopeSchema, Subject: subject, Admission: admission, Result: result,
 	})
 	if err != nil {
 		return err
@@ -675,7 +696,7 @@ func readFacadeReviewerArtifacts(ctx context.Context, repo string, raw []string,
 		if err != nil {
 			return nil, fmt.Errorf("verify reviewer artifact %d: %w", index+1, err)
 		}
-		result, subject, err := decodeBoundAdmittedReviewerResult(payload, artifact.SHA256, state, revision, index, frozen)
+		result, subject, err := decodeBoundAdmittedReviewerResult(ctx, repo, payload, artifact.SHA256, state, revision, index, frozen)
 		if err != nil {
 			return nil, fmt.Errorf("parse reviewer artifact %d: %w", index+1, err)
 		}
@@ -717,7 +738,7 @@ func discoverCapturedReviewerArtifacts(ctx context.Context, repo, storeDir strin
 		if err != nil {
 			return nil, fmt.Errorf("verify captured reviewer result %d: %w", order, err)
 		}
-		_, subject, err := decodeBoundAdmittedReviewerResult(payload, artifact.SHA256, state, revision, order, frozen)
+		_, subject, err := decodeBoundAdmittedReviewerResult(ctx, repo, payload, artifact.SHA256, state, revision, order, frozen)
 		if err != nil {
 			return nil, fmt.Errorf("verify captured reviewer admission %d: %w", order, err)
 		}
@@ -757,7 +778,7 @@ func readCapturedReviewerResults(ctx context.Context, repo, storeDir string, sta
 		if err != nil {
 			return nil, err
 		}
-		result, subject, err := decodeBoundAdmittedReviewerResult(payload, artifact.SHA256, state, revision, index, frozen)
+		result, subject, err := decodeBoundAdmittedReviewerResult(ctx, repo, payload, artifact.SHA256, state, revision, index, frozen)
 		if err != nil {
 			return nil, err
 		}
@@ -777,7 +798,7 @@ func reviewerArtifactFrozenContext(ctx context.Context, repo string, state revie
 	return frozen, nil
 }
 
-func decodeBoundAdmittedReviewerResult(payload []byte, artifactDigest string, state reviewtransaction.CompactState, currentRevision string, order int, frozen reviewtransaction.FrozenCandidateContext) (facadeReviewerResult, reviewtransaction.ArtifactSubject, error) {
+func decodeBoundAdmittedReviewerResult(ctx context.Context, repo string, payload []byte, artifactDigest string, state reviewtransaction.CompactState, currentRevision string, order int, frozen reviewtransaction.FrozenCandidateContext) (facadeReviewerResult, reviewtransaction.ArtifactSubject, error) {
 	var envelope admittedReviewerResult
 	if err := decodeFacadeJSONBytes(payload, &envelope); err != nil {
 		return facadeReviewerResult{}, reviewtransaction.ArtifactSubject{}, err
@@ -791,13 +812,25 @@ func decodeBoundAdmittedReviewerResult(payload []byte, artifactDigest string, st
 		) {
 		return facadeReviewerResult{}, reviewtransaction.ArtifactSubject{}, errors.New("captured reviewer result does not bind the active authority revision")
 	}
-	expected, err := reviewtransaction.NewArtifactSubject(
-		state, envelope.Subject.AuthorityRevision, frozen, state.SelectedLenses[order], order, envelope.Subject.CorrectionTargetIdentity,
-	)
+	subjectFrozen := frozen
+	var expected reviewtransaction.ArtifactSubject
+	var err error
+	if envelope.Subject.Schema == reviewtransaction.ArtifactSubjectSchemaV1 {
+		subjectFrozen, err = (reviewtransaction.SnapshotBuilder{Repo: repo}).WithLegacyCandidateDiff(ctx, state.InitialSnapshot, frozen)
+		if err == nil {
+			expected, err = reviewtransaction.NewLegacyArtifactSubject(
+				state, envelope.Subject.AuthorityRevision, subjectFrozen, state.SelectedLenses[order], order, envelope.Subject.CorrectionTargetIdentity,
+			)
+		}
+	} else {
+		expected, err = reviewtransaction.NewArtifactSubject(
+			state, envelope.Subject.AuthorityRevision, frozen, state.SelectedLenses[order], order, envelope.Subject.CorrectionTargetIdentity,
+		)
+	}
 	if err != nil {
 		return facadeReviewerResult{}, reviewtransaction.ArtifactSubject{}, err
 	}
-	result, err := decodeAdmittedReviewerResult(payload, expected, frozen)
+	result, err := decodeAdmittedReviewerResult(payload, expected, subjectFrozen)
 	if err != nil {
 		return facadeReviewerResult{}, reviewtransaction.ArtifactSubject{}, err
 	}
@@ -817,7 +850,11 @@ func decodeAdmittedReviewerResult(payload []byte, expected reviewtransaction.Art
 	if err := decodeFacadeJSONBytes(payload, &envelope); err != nil {
 		return facadeReviewerResult{}, err
 	}
-	if envelope.Schema != reviewAdmittedResultSchema || !reflect.DeepEqual(envelope.Subject, expected) {
+	wantSchema := reviewAdmittedResultSchema
+	if expected.Schema == reviewtransaction.ArtifactSubjectSchemaV1 {
+		wantSchema = reviewtransaction.AdmittedReviewerResultSchemaV1
+	}
+	if envelope.Schema != wantSchema || !reflect.DeepEqual(envelope.Subject, expected) {
 		return facadeReviewerResult{}, errors.New("captured reviewer result does not contain the exact provider-owned subject")
 	}
 	if err := envelope.Admission.Validate(expected); err != nil {

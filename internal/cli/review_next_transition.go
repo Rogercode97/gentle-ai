@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -50,6 +51,8 @@ type ReviewTransitionInput struct {
 	Arguments           []ReviewTransitionArgument                    `json:"arguments"`
 	ArtifactSubject     *reviewtransaction.ArtifactSubject            `json:"artifact_subject,omitempty"`
 	CandidateDiff       *reviewtransaction.FrozenCandidateDiff        `json:"candidate_diff,omitempty"`
+	BaseTree            string                                        `json:"base_tree,omitempty"`
+	CandidateTree       string                                        `json:"candidate_tree,omitempty"`
 	ChangedPathManifest *[]reviewtransaction.ChangedPathManifestEntry `json:"changed_path_manifest,omitempty"`
 	ValidationRequest   *reviewtransaction.TargetedValidationRequest  `json:"validation_request,omitempty"`
 }
@@ -97,7 +100,7 @@ type ReviewTransitionArtifact struct {
 	AdmissionDecision reviewtransaction.ArtifactAdmissionDecision `json:"admission_decision"`
 }
 
-func newReviewNextTransition(status ReviewTargetStatusResult, selectedLenses []string, artifacts []ReviewTransitionArtifact, evidenceAvailable bool, artifactErr error, input reviewNextTransitionInput) ReviewNextTransition {
+func newReviewNextTransition(status ReviewTargetStatusResult, selectedLenses []string, artifacts []ReviewTransitionArtifact, capturedEvidence *reviewtransaction.VerificationEvidenceRecord, artifactErr error, input reviewNextTransitionInput) ReviewNextTransition {
 	if status.Applicability != reviewtransaction.TargetApplicabilityCurrent {
 		switch status.Applicability {
 		case reviewtransaction.TargetApplicabilityUnrelated:
@@ -158,6 +161,33 @@ func newReviewNextTransition(status ReviewTargetStatusResult, selectedLenses []s
 		if input.ValidationRequest != nil {
 			validationBinding := binding
 			validationBinding.TargetIdentity = input.ValidationRequest.CorrectionTargetIdentity
+			if input.EvidenceErr != nil {
+				if !errors.Is(input.EvidenceErr, reviewtransaction.ErrCapturedVerificationEvidenceMissing) &&
+					!errors.Is(input.EvidenceErr, reviewtransaction.ErrCapturedVerificationEvidenceMetadataMissing) {
+					return reviewStopTransition("captured_verification_evidence_invalid")
+				}
+				return reviewCollectTransition("correction_repository_verification_required", ReviewTransitionInput{
+					Name: "evidence", Schema: reviewtransaction.VerificationEvidenceRecordSchema,
+					CaptureOperation: "review.capture-evidence", Arguments: reviewBindingArguments(validationBinding),
+				})
+			}
+			if capturedEvidence == nil {
+				return reviewCollectTransition("correction_repository_verification_required", ReviewTransitionInput{
+					Name: "evidence", Schema: reviewtransaction.VerificationEvidenceRecordSchema,
+					CaptureOperation: "review.capture-evidence", Arguments: reviewBindingArguments(validationBinding),
+				})
+			}
+			switch capturedEvidence.Outcome {
+			case reviewtransaction.VerificationOutcomeFailed:
+				return reviewStopTransition("correction_repository_verification_failed")
+			case reviewtransaction.VerificationOutcomeProceduralFailure:
+				return reviewExecuteTransition("correction_repository_tooling_failed", "review.finalize",
+					[]ReviewTransitionArgument{{Name: "lineage", Value: binding.LineageID}, {Name: "captured_evidence", Value: "true"}},
+					[]ReviewTransitionArgument{{Name: "state", Value: "correction_required"}, {Name: "verification_outcome", Value: string(capturedEvidence.Outcome)}}, validationBinding, nil)
+			case reviewtransaction.VerificationOutcomePassed:
+			default:
+				return reviewStopTransition("captured_verification_evidence_invalid")
+			}
 			return reviewCollectTransition("targeted_validation_required", ReviewTransitionInput{
 				Name: "targeted_validation", Schema: reviewtransaction.TargetedValidationRequestSchema,
 				CaptureOperation: "external.run_targeted_validation", Arguments: reviewBindingArguments(validationBinding),
@@ -172,14 +202,28 @@ func newReviewNextTransition(status ReviewTargetStatusResult, selectedLenses []s
 			Arguments: reviewBindingArguments(binding),
 		})
 	case reviewtransaction.StateValidating:
-		if evidenceAvailable {
-			return reviewExecuteTransition("captured_verification_evidence_ready", "review.finalize", []ReviewTransitionArgument{{Name: "lineage", Value: binding.LineageID}, {Name: "captured_evidence", Value: "true"}}, []ReviewTransitionArgument{{Name: "state", Value: "validating"}, {Name: "verification_evidence", Value: "captured"}}, binding, nil)
+		if input.EvidenceErr != nil && !errors.Is(input.EvidenceErr, reviewtransaction.ErrCapturedVerificationEvidenceMissing) &&
+			!errors.Is(input.EvidenceErr, reviewtransaction.ErrCapturedVerificationEvidenceMetadataMissing) {
+			return reviewStopTransition("captured_verification_evidence_invalid")
+		}
+		if capturedEvidence != nil {
+			reason := "captured_verification_evidence_passed"
+			switch capturedEvidence.Outcome {
+			case reviewtransaction.VerificationOutcomeFailed:
+				reason = "captured_verification_failed"
+			case reviewtransaction.VerificationOutcomeProceduralFailure:
+				reason = "captured_verification_tooling_failed"
+			case reviewtransaction.VerificationOutcomePassed:
+			default:
+				return reviewStopTransition("captured_verification_evidence_invalid")
+			}
+			return reviewExecuteTransition(reason, "review.finalize", []ReviewTransitionArgument{{Name: "lineage", Value: binding.LineageID}, {Name: "captured_evidence", Value: "true"}}, []ReviewTransitionArgument{{Name: "state", Value: "validating"}, {Name: "verification_outcome", Value: string(capturedEvidence.Outcome)}}, binding, nil)
 		}
 		if status.Frozen != nil && status.Frozen.Tier == reviewtransaction.RiskLow {
 			return reviewExecuteTransition("native_low_risk_verification", "review.finalize", []ReviewTransitionArgument{{Name: "lineage", Value: binding.LineageID}}, []ReviewTransitionArgument{{Name: "state", Value: "validating"}, {Name: "risk_level", Value: "low"}}, binding, nil)
 		}
 		return reviewCollectTransition("verification_evidence_required", ReviewTransitionInput{
-			Name: "evidence", Schema: "gentle-ai.review-verification-evidence/v1", CaptureOperation: "review.capture-evidence",
+			Name: "evidence", Schema: reviewtransaction.VerificationEvidenceRecordSchema, CaptureOperation: "review.capture-evidence",
 			Arguments: reviewBindingArguments(binding),
 		})
 	case reviewtransaction.StateInvalidated:
@@ -246,6 +290,8 @@ type reviewFinalizeTransitionContext struct {
 	RepositoryContext string
 	ValidationRequest *reviewtransaction.TargetedValidationRequest
 	CaptureContext    *reviewCaptureContext
+	CapturedEvidence  *reviewtransaction.VerificationEvidenceRecord
+	EvidenceErr       error
 }
 
 func reviewFinalizeNextTransition(state reviewtransaction.CompactState, revision string, artifacts []ReviewTransitionArtifact, artifactErr error, contexts ...reviewFinalizeTransitionContext) ReviewNextTransition {
@@ -270,9 +316,10 @@ func reviewFinalizeNextTransition(state reviewtransaction.CompactState, revision
 	if state.State == reviewtransaction.StateReviewing && artifactErr == nil {
 		return reviewExecuteTransition("captured_results_ready", "review.finalize", []ReviewTransitionArgument{{Name: "lineage", Value: state.LineageID}, {Name: "captured_results", Value: "true"}}, []ReviewTransitionArgument{{Name: "state", Value: "reviewing"}, {Name: "captured_artifacts", Value: "complete"}}, reviewTransitionBinding(status.Authority, status.TargetIdentity), artifacts)
 	}
-	return newReviewNextTransition(status, state.SelectedLenses, artifacts, false, artifactErr, reviewNextTransitionInput{
+	return newReviewNextTransition(status, state.SelectedLenses, artifacts, transitionContext.CapturedEvidence, artifactErr, reviewNextTransitionInput{
 		RepositoryContext: transitionContext.RepositoryContext, ValidationRequest: transitionContext.ValidationRequest,
-		CorrectionForecasted: state.ProposedCorrectionLines != nil, CaptureContext: transitionContext.CaptureContext,
+		EvidenceErr: transitionContext.EvidenceErr, CorrectionForecasted: state.ProposedCorrectionLines != nil,
+		CaptureContext: transitionContext.CaptureContext,
 	})
 }
 
@@ -342,12 +389,19 @@ func reviewCaptureInput(binding ReviewTransitionBinding, lens string, order int,
 	}
 	if context != nil && order >= 0 && order < len(context.ArtifactSubjects) {
 		subject := context.ArtifactSubjects[order]
-		diff := context.FrozenContext.CandidateDiff
 		manifest := append([]reviewtransaction.ChangedPathManifestEntry(nil), context.FrozenContext.ChangedPathManifest...)
 		if manifest == nil {
 			manifest = []reviewtransaction.ChangedPathManifestEntry{}
 		}
-		input.ArtifactSubject, input.CandidateDiff, input.ChangedPathManifest = &subject, &diff, &manifest
+		input.ArtifactSubject = &subject
+		input.ChangedPathManifest = &manifest
+		if context.FrozenContext.LegacyCandidateDiff != nil {
+			diff := *context.FrozenContext.LegacyCandidateDiff
+			input.CandidateDiff = &diff
+		} else {
+			input.Arguments = append(input.Arguments, ReviewTransitionArgument{Name: "subject-hash", Value: subject.SubjectHash})
+			input.BaseTree, input.CandidateTree = context.FrozenContext.BaseTree, context.FrozenContext.CandidateTree
+		}
 	}
 	return input
 }
@@ -359,6 +413,7 @@ type reviewNextTransitionInput struct {
 	StartLineage                                   string
 	RepositoryContext                              string
 	ValidationRequest                              *reviewtransaction.TargetedValidationRequest
+	EvidenceErr                                    error
 	CorrectionForecasted                           bool
 	CaptureContext                                 *reviewCaptureContext
 	Selector                                       *reviewTransitionSelector
@@ -375,8 +430,12 @@ type reviewTransitionSelector struct {
 }
 
 func reviewStartArguments(status ReviewTargetStatusResult, lineage string) []ReviewTransitionArgument {
+	contract := status.Contract
+	if contract == "" {
+		contract = ReviewIntegrationContractV1
+	}
 	arguments := []ReviewTransitionArgument{
-		{Name: "contract", Value: ReviewIntegrationContractV1},
+		{Name: "contract", Value: contract},
 		{Name: "target", Value: status.TargetIdentity},
 		{Name: "projection", Value: string(status.Projection.Projection)},
 	}
@@ -428,7 +487,13 @@ func reviewRepairTransition(status ReviewTargetStatusResult, input reviewNextTra
 func newReviewCaptureContext(state reviewtransaction.CompactState, revision string, frozen reviewtransaction.FrozenCandidateContext) (*reviewCaptureContext, error) {
 	subjects := make([]reviewtransaction.ArtifactSubject, len(state.SelectedLenses))
 	for order, lens := range state.SelectedLenses {
-		subject, err := reviewtransaction.NewArtifactSubject(state, revision, frozen, lens, order, "")
+		var subject reviewtransaction.ArtifactSubject
+		var err error
+		if frozen.LegacyCandidateDiff != nil {
+			subject, err = reviewtransaction.NewLegacyArtifactSubject(state, revision, frozen, lens, order, "")
+		} else {
+			subject, err = reviewtransaction.NewArtifactSubject(state, revision, frozen, lens, order, "")
+		}
 		if err != nil {
 			return nil, fmt.Errorf("derive restart artifact subject %d: %w", order, err)
 		}
@@ -528,6 +593,7 @@ func reviewFinalVerificationRetryCollection(status ReviewTargetStatusResult, bin
 			{Name: "validating-revision", Value: retry.ValidatingRevision},
 			{Name: "target", Value: retry.TargetIdentity},
 			{Name: "failed-evidence-hash", Value: retry.FailedEvidenceHash},
+			{Name: "failed-evidence-record-digest", Value: retry.FailedEvidenceRecordDigest},
 			{Name: "finalize-request-digest", Value: retry.FinalizeRequestDigest},
 			{Name: "incident-schema", Value: retry.IncidentSchema},
 			{Name: "incident-class", Value: retry.IncidentClass},
