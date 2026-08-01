@@ -15,7 +15,11 @@ var boundedReviewRequiredClauses = []string{
 	"gentle-ai review status --cwd <repo> --contract gentle-ai.review-integration/v2 --next-transition",
 	"route only from the returned `next_transition`",
 	"exact operation and ordered argument tokens unchanged",
-	"exact `review.capture-result` collection input once in the foreground",
+	"exact `review.capture-result` collection input once per provider-returned collection attempt",
+	"After empty, malformed, schema-invalid, access/provider failure, or incomplete inspection, query negotiated STATUS again",
+	"fresh `next_transition` reoffers the exact same bound slot",
+	"If STATUS discovers a committed capture, continue without relaunching",
+	"Never infer a retry from transcript or error text alone",
 	"exact literal prefix `GENTLE_AI_REVIEW_BINDING `",
 	"including the trailing space and never `=`",
 	"These are the prompt's first bytes",
@@ -231,7 +235,7 @@ func TestRenderedReviewersAreReadOnlyAndSingleResult(t *testing.T) {
 			path := family + "/agents/review-" + lens + ".md"
 			t.Run(family+"/"+lens, func(t *testing.T) {
 				content := renderBoundedReviewAsset(path)
-				for _, want := range []string{"Review once", "GENTLE_AI_REVIEW_CONTEXT", "sole source of artifact_subject", "changed_path_manifest", "base_tree", "candidate_tree", "env -i", "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null", "GIT_ATTR_NOSYSTEM=1", "--no-replace-objects", "diff --name-status --text --no-ext-diff --no-textconv --no-renames", "diff --numstat --text --no-ext-diff --no-textconv --no-renames", "diff --patch --text --full-index --no-color --no-renames --no-ext-diff --no-textconv --diff-algorithm=myers --no-indent-heuristic --unified=3", "cat-file -p '<tree>:<path>'", ":(literal)<path>", "never pass --binary", "attributes must never suppress a hunk", "incomplete inspection", "Never read the live worktree", "## Candidate-Causal Admission", "Return one JSON object and no prose", `"subject_hash":"<artifact_subject.subject_hash>"`, "GENTLE_AI_REVIEW_BINDING.subject_hash", `"inspection":{"status":"completed","paths":["<every changed_path_manifest.path in exact order>"]}`, "lens triage", "Emit no unknown fields"} {
+				for _, want := range []string{"Review once", "GENTLE_AI_REVIEW_CONTEXT", "sole source of artifact_subject", "changed_path_manifest", "base_tree", "candidate_tree", "gentle-ai review inspect-candidate", "--operation name-status", "--operation numstat", "--operation stat --path-index", "--operation patch --path-index", "--operation object --path-index", "--side base", "--side candidate", "provider binding", "zero-based changed_path_manifest index", "never pass --binary", "incomplete inspection", "Never read the live worktree", "## Candidate-Causal Admission", "Return one JSON object and no prose", `"subject_hash":"<artifact_subject.subject_hash>"`, "GENTLE_AI_REVIEW_BINDING.subject_hash", `"inspection":{"status":"completed","paths":["<every changed_path_manifest.path in exact order>"]}`, "lens triage", "Emit no unknown fields"} {
 					if !strings.Contains(content, want) {
 						t.Errorf("%s missing %q", path, want)
 					}
