@@ -346,6 +346,7 @@ func TestAllEmbeddedAssetsAreReadable(t *testing.T) {
 		"skills/skill-improver/SKILL.md",
 		"skills/skill-improver/references/skill-style-guide.md",
 		"skills/chained-pr/references/chaining-details.md",
+		"skills/rdd-defect-workflow/SKILL.md",
 	}
 
 	for _, path := range expectedFiles {
@@ -483,7 +484,7 @@ func TestReviewResultArtifactsPluginContract(t *testing.T) {
 		`artifact_subject`,
 		`GENTLE_AI_REVIEW_CONTEXT`,
 		`validManifest(manifest)`,
-		`output.args.prompt = await injectReviewerContext(`,
+		`REVIEW_OUTCOME.UNSUPPORTED_CAPABILITY`,
 		`"--lineage", binding.lineage`,
 		`"--target", binding.target`,
 		`"--lens", binding.lens`,
@@ -528,9 +529,7 @@ func TestReviewResultArtifactsPluginContract(t *testing.T) {
 		// bounded raw payload in the thrown error so the transcript retains it.
 		`raw reviewer result follows for manual recovery`,
 		`PRESERVE_EMBED_LIMIT`,
-		// Missing native preflight support must fail closed before a bound
-		// reviewer launches without provider-owned frozen context.
-		`The reviewer was not launched`,
+		`REVIEW_OUTCOME.UNSUPPORTED_CAPABILITY`,
 		`export default ReviewResultArtifactsPlugin`,
 	} {
 		if !strings.Contains(source, want) {
@@ -1641,9 +1640,9 @@ func TestEmbeddedAssetCount(t *testing.T) {
 		}
 	}
 
-	// We expect 23 skill directories (10 SDD + judgment-day + 6 foundation + 4 sustainable-review + hermes-ephemeral-delegation + _shared).
-	if skillDirs != 23 {
-		t.Fatalf("expected 23 skill directories, got %d", skillDirs)
+	// We expect 24 skill directories (10 SDD + judgment-day + 6 foundation + 5 sustainable-review + hermes-ephemeral-delegation + _shared).
+	if skillDirs != 24 {
+		t.Fatalf("expected 24 skill directories, got %d", skillDirs)
 	}
 
 	// Verify each skill directory has a SKILL.md.
