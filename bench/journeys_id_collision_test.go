@@ -25,9 +25,16 @@ func journeySources() []journeySource {
 		{"journeys.go", coreJourneys()},
 		{"journeys_edge.go", edgeJourneys()},
 		{"journeys_sdd.go", sddJourneys()},
+		{"journeys_sdd_chain.go", sddChainJourneys()},
+		{"journeys_handoff.go", handoffJourneys()},
+		{"journeys_capture_evidence_v5.go", captureEvidenceDescriptorJourneys()},
 		{"journeys_wave1.go", waveOneJourneys()},
 		{"journeys_wave3.go", waveThreeJourneys()},
 		{"journeys_wave5.go", waveFiveJourneys()},
+		{"journeys_advisory.go", advisoryJourneys()},
+		{"journeys_zero_delta.go", zeroDeltaJourneys()},
+		{"journeys_local_gate_advance.go", localGateBaseAdvanceJourneys()},
+		{"journeys_intended_untracked.go", intendedUntrackedJourneys()},
 	}
 }
 

@@ -1022,7 +1022,10 @@ func TestSyncBackupTargetsIncludeManagedOpenCodePluginsWithoutSDD(t *testing.T) 
 		Components: []model.ComponentID{model.ComponentEngram},
 	}
 
-	targets := syncBackupTargets(home, "", sel, resolveAdapters(sel.Agents))
+	targets, err := syncBackupTargets(home, "", sel, resolveAdapters(sel.Agents))
+	if err != nil {
+		t.Fatalf("syncBackupTargets() error = %v", err)
+	}
 
 	for _, configDir := range []string{"opencode", "kilo"} {
 		for _, plugin := range []string{"model-variants.ts", "review-result-artifacts.ts", "skill-registry.ts"} {
@@ -1037,7 +1040,10 @@ func TestSyncBackupTargetsIncludeManagedOpenCodePluginsWithoutSDD(t *testing.T) 
 func TestSyncBackupTargetsIncludeClaudeEngramLegacyMigrationSource(t *testing.T) {
 	home := t.TempDir()
 	selection := model.Selection{Agents: []model.AgentID{model.AgentClaudeCode}, Components: []model.ComponentID{model.ComponentEngram}}
-	targets := syncBackupTargets(home, "", selection, resolveAdapters(selection.Agents))
+	targets, err := syncBackupTargets(home, "", selection, resolveAdapters(selection.Agents))
+	if err != nil {
+		t.Fatalf("syncBackupTargets() error = %v", err)
+	}
 	want := filepath.Join(home, ".claude", "mcp", "engram.json")
 	if !containsPath(targets, want) {
 		t.Fatalf("sync backup targets missing legacy migration source %q: %v", want, targets)
@@ -1121,6 +1127,76 @@ func TestRunSyncRollbackRestoresClaudeEngramMigrationSource(t *testing.T) {
 	}
 	if len(backups) != 1 {
 		t.Fatalf("persistent backup count = %d, want 1 after duplicate transaction", len(backups))
+	}
+}
+
+func TestSyncSkillBackupRollsBackOpenClawWorkspaceSkills(t *testing.T) {
+	home := t.TempDir()
+	workspace := t.TempDir()
+	currentProject := t.TempDir()
+	writeOpenClawConfigWithWorkspace(t, home, workspace)
+	t.Chdir(currentProject)
+	selection := model.Selection{
+		Agents:     []model.AgentID{model.AgentOpenClaw},
+		Components: []model.ComponentID{model.ComponentSkills},
+		Skills:     []model.SkillID{model.SkillGoTesting},
+	}
+
+	openClawGlobalSkills := filepath.Join(home, ".openclaw", "skills")
+	openClawWorkspaceSkills := filepath.Join(workspace, ".openclaw", "skills")
+	workspaceSkill := filepath.Join(openClawWorkspaceSkills, "go-testing", "SKILL.md")
+	workspaceReference := filepath.Join(openClawWorkspaceSkills, "go-testing", "references", "examples.md")
+	writeStale(t, workspaceSkill)
+	writeStale(t, workspaceReference)
+
+	runtime, err := newSyncRuntime(home, selection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan := runtime.stagePlan()
+	plan.Apply = append(plan.Apply, failingCompatibilityStep{})
+	result := pipeline.NewOrchestrator(pipeline.DefaultRollbackPolicy()).Execute(plan)
+	if result.Err == nil {
+		t.Fatal("injected later failure did not trigger sync rollback")
+	}
+	for _, path := range []string{workspaceSkill, workspaceReference} {
+		content, readErr := os.ReadFile(path)
+		if readErr != nil || string(content) != "stale" {
+			t.Errorf("sync rollback did not restore %q: content=%q error=%v", path, content, readErr)
+		}
+	}
+	for _, path := range []string{
+		filepath.Join(openClawGlobalSkills, "go-testing", "SKILL.md"),
+		filepath.Join(openClawGlobalSkills, "go-testing", "references", "examples.md"),
+	} {
+		if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
+			t.Errorf("OpenClaw sync must not write global skill path %q: %v", path, statErr)
+		}
+	}
+}
+
+func TestSyncBackupTargetsOpenClawSkillsUseConfiguredWorkspace(t *testing.T) {
+	home := t.TempDir()
+	workspace := t.TempDir()
+	selection := model.Selection{
+		Agents:     []model.AgentID{model.AgentOpenClaw},
+		Components: []model.ComponentID{model.ComponentSkills},
+		Skills:     []model.SkillID{model.SkillGoTesting},
+	}
+
+	targets, err := syncBackupTargets(home, workspace, selection, resolveAdapters(selection.Agents))
+	if err != nil {
+		t.Fatalf("syncBackupTargets() error = %v", err)
+	}
+
+	workspaceReference := filepath.Join(workspace, ".openclaw", "skills", "go-testing", "references", "examples.md")
+	if !containsPath(targets, workspaceReference) {
+		t.Errorf("sync backup targets missing OpenClaw workspace skill path %q\ntargets = %v", workspaceReference, targets)
+	}
+
+	homeReference := filepath.Join(home, ".openclaw", "skills", "go-testing", "references", "examples.md")
+	if containsPath(targets, homeReference) {
+		t.Errorf("sync backup targets must not include OpenClaw home-root skill path %q\ntargets = %v", homeReference, targets)
 	}
 }
 
@@ -1654,7 +1730,10 @@ func TestSyncRuntimeAddsCodeGraphStepsOnlyWhenSelected(t *testing.T) {
 		t.Fatal("sync plan included Pi CodeGraph without explicit selection")
 	}
 
-	paths := syncBackupTargets(home, "", selected, resolveAdapters([]model.AgentID{model.AgentOpenCode}))
+	paths, err := syncBackupTargets(home, "", selected, resolveAdapters([]model.AgentID{model.AgentOpenCode}))
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, path := range paths {
 		if path == filepath.Join(home, ".config", "opencode", "AGENTS.md") {
 			return
@@ -4596,7 +4675,10 @@ func TestSyncBackupTargetsIncludeRoutingGuidancePathsWithoutAnyComponent(t *test
 	agent := model.AgentClaudeCode
 	selection := model.Selection{Agents: []model.AgentID{agent}}
 
-	targets := syncBackupTargets(home, "", selection, resolveAdapters(selection.Agents))
+	targets, err := syncBackupTargets(home, "", selection, resolveAdapters(selection.Agents))
+	if err != nil {
+		t.Fatalf("syncBackupTargets() error = %v", err)
+	}
 
 	routing, err := agentguidance.RoutingPaths(home, agent)
 	if err != nil {
@@ -4620,7 +4702,10 @@ func TestSyncBackupTargetsContainNoDuplicatePaths(t *testing.T) {
 		SDDMode:    model.SDDModeSingle,
 	}
 
-	targets := syncBackupTargets(home, "", selection, resolveAdapters(selection.Agents))
+	targets, err := syncBackupTargets(home, "", selection, resolveAdapters(selection.Agents))
+	if err != nil {
+		t.Fatalf("syncBackupTargets() error = %v", err)
+	}
 
 	assertNoDuplicatePaths(t, "syncBackupTargets", targets)
 }

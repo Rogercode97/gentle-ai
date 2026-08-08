@@ -108,11 +108,11 @@ func TestRunSDDAttemptRejectsMissingOrAmbiguousInputs(t *testing.T) {
 		args []string
 		want string
 	}{
-		{name: "missing operation", args: nil, want: "requires status, begin, finish, reset, rescope, acquire, or settle"},
+		{name: "missing operation", args: nil, want: "requires status, begin, finish, handoff, reset, rescope, acquire, settle, or grant"},
 		// The no-args refusal already enumerates every valid operation; the
 		// unknown-operation refusal must do the same instead of naming only
 		// the bad value with no route to the valid set.
-		{name: "unknown operation", args: []string{"begn"}, want: `unknown sdd-attempt operation "begn"; want one of status, begin, finish, reset, rescope, acquire, or settle`},
+		{name: "unknown operation", args: []string{"begn"}, want: `unknown sdd-attempt operation "begn"; want one of status, begin, finish, handoff, reset, rescope, acquire, settle, or grant`},
 		{name: "missing change", args: []string{"status", "--cwd", repo}, want: "--change"},
 		{name: "unknown flag", args: []string{"status", "--cwd", repo, "--change", "thin", "--mystery"}, want: "flag provided but not defined"},
 		{name: "irrelevant flag", args: []string{"status", "--cwd", repo, "--change", "thin", "--outcome", "failed"}, want: "flag provided but not defined"},
@@ -121,6 +121,11 @@ func TestRunSDDAttemptRejectsMissingOrAmbiguousInputs(t *testing.T) {
 		{name: "missing finish evidence", args: []string{"finish", "--cwd", repo, "--change", "thin", "--expected-revision", cliAttemptHash('b'), "--request-id", "finish", "--outcome", "failed", "--diagnosis", "diagnosis", "--harness-disposition", "reused", "--cleanup-evidence", "cleanup", "--process-evidence", "process"}, want: "--evidence-revision"},
 		{name: "partial remediation successor", args: []string{"finish", "--cwd", repo, "--change", "thin", "--expected-revision", cliAttemptHash('b'), "--request-id", "finish", "--outcome", "passed", "--evidence-revision", cliAttemptHash('c'), "--diagnosis", "diagnosis", "--harness-disposition", "reused", "--cleanup-evidence", "cleanup", "--process-evidence", "process", "--successor-lineage", "review-successor"}, want: "remediation successor requires --expected-binding-revision, --successor-lineage, and --remediates-evidence-revision together"},
 		{name: "positional argument", args: []string{"status", "--cwd", repo, "--change", "thin", "extra"}, want: "unexpected sdd-attempt argument"},
+		// Grant's missing-flag refusal follows acquire/settle: it enumerates
+		// every missing flag and names the rerunnable continuation.
+		{name: "missing grant roots", args: []string{"grant", "--cwd", repo, "--change", "thin", "--change-instance", "instance-token", "--request-id", "grant", "--actor", "maintainer", "--reason", "rollout"}, want: "sdd-attempt grant requires --root; rerun `gentle-ai sdd-attempt grant` with those missing flags"},
+		{name: "missing grant instance and audit fields", args: []string{"grant", "--cwd", repo, "--change", "thin", "--root", repo}, want: "sdd-attempt grant requires --change-instance, --request-id, --actor, --reason"},
+		{name: "irrelevant grant flag", args: []string{"grant", "--cwd", repo, "--change", "thin", "--root", repo, "--change-instance", "instance-token", "--request-id", "grant", "--actor", "maintainer", "--reason", "rollout", "--work-unit", "unit"}, want: "flag provided but not defined"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -140,9 +145,9 @@ func TestRunSDDAttemptRejectsMissingOrAmbiguousInputs(t *testing.T) {
 // all four). Mirrors the reviewIntegrationGatesInOrder /
 // reviewIntegrationGateNames pattern in review_operation_contract.go.
 func TestSDDAttemptOperationsCanonicalSourceEnumeratesConsistently(t *testing.T) {
-	want := []string{"status", "begin", "finish", "reset", "rescope", "acquire", "settle"}
-	if !reflect.DeepEqual(sddAttemptOperationsInOrder, want) {
-		t.Fatalf("sddAttemptOperationsInOrder = %v, want %v", sddAttemptOperationsInOrder, want)
+	want := []string{"status", "begin", "finish", "handoff", "reset", "rescope", "acquire", "settle", "grant"}
+	if got := sddAttemptOperationNames(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("sddAttemptOperationNames() = %v, want %v", got, want)
 	}
 	for _, operation := range want {
 		if !validSDDAttemptOperation(operation) {
@@ -152,9 +157,204 @@ func TestSDDAttemptOperationsCanonicalSourceEnumeratesConsistently(t *testing.T)
 	if validSDDAttemptOperation("begn") {
 		t.Fatal(`validSDDAttemptOperation("begn") = true, want false`)
 	}
-	if got := joinSDDAttemptOperations(); got != "status, begin, finish, reset, rescope, acquire, or settle" {
-		t.Fatalf("joinSDDAttemptOperations() = %q, want %q", got, "status, begin, finish, reset, rescope, acquire, or settle")
+	if got := joinSDDAttemptOperations(); got != "status, begin, finish, handoff, reset, rescope, acquire, settle, or grant" {
+		t.Fatalf("joinSDDAttemptOperations() = %q, want %q", got, "status, begin, finish, handoff, reset, rescope, acquire, settle, or grant")
 	}
+}
+
+// TestRunSDDAttemptGrantPersistsAndReplaysThroughTheCLI is the CLI dispatch
+// proof for the `grant` operation (#2540 S3) under #2557's instance-identity
+// containment: a first grant on a fresh ledger needs no --expected-revision
+// (the S2 API admits an empty CAS token against an empty chain) but always
+// needs --change-instance, the persisted roots round-trip through
+// `sdd-attempt status --change-instance`, an exact duplicate --request-id
+// replays the committed revision idempotently, and a second grant reusing
+// the SAME instance token chains --expected-revision on the first and
+// accumulates roots in grant order, deduplicating already-granted ones.
+// The interim contract before S4b derives markers natively: the caller
+// mints one opaque token per change instance and reuses that exact token
+// for widening grants within the change lifecycle; a different token (a
+// recreated change, or a reader that declares none) projects nothing.
+func TestRunSDDAttemptGrantPersistsAndReplaysThroughTheCLI(t *testing.T) {
+	repo := initReviewCLIRepo(t)
+	change := "cli-grant"
+	instance := "cli-grant-instance-token"
+	sibling, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	grantArgs := []string{
+		"grant", "--cwd", repo, "--change", change, "--root", sibling, "--change-instance", instance,
+		"--actor", "maintainer", "--reason", "sequential multi-repository rollout", "--request-id", "cli-grant-1",
+	}
+	granted := runSDDAttemptStatus(t, grantArgs)
+	if len(granted.GrantedRoots) != 1 || granted.GrantedRoots[0] != sibling || granted.Revision == "" {
+		t.Fatalf("grant CLI status = %#v, want granted root %q with a committed revision", granted, sibling)
+	}
+
+	// Status with the same instance token replays the persisted chain: the
+	// grant survives the process boundary between the mutating call and a
+	// later read that declares the instance it serves.
+	status := runSDDAttemptStatus(t, []string{"status", "--cwd", repo, "--change", change, "--change-instance", instance})
+	if !reflect.DeepEqual(status.GrantedRoots, []string{sibling}) || status.Revision != granted.Revision {
+		t.Fatalf("post-grant CLI status = %#v, want granted roots [%q] at revision %s", status, sibling, granted.Revision)
+	}
+
+	// Status WITHOUT an instance declaration projects no granted roots: the
+	// conservative containment for undeclared readers (#2557).
+	undeclared := runSDDAttemptStatus(t, []string{"status", "--cwd", repo, "--change", change})
+	if undeclared.GrantedRoots != nil {
+		t.Fatalf("undeclared-instance CLI status projected granted roots: %#v", undeclared.GrantedRoots)
+	}
+
+	// Status under a DIFFERENT instance token projects nothing either: a
+	// recreated change reusing this archived name inherits no authority.
+	recreated := runSDDAttemptStatus(t, []string{"status", "--cwd", repo, "--change", change, "--change-instance", "recreated-instance-token"})
+	if recreated.GrantedRoots != nil {
+		t.Fatalf("recreated-instance CLI status resurrected granted roots: %#v", recreated.GrantedRoots)
+	}
+
+	// An exact duplicate request-id is idempotent through the CLI: same
+	// committed revision, no second record.
+	replayed := runSDDAttemptStatus(t, grantArgs)
+	if replayed.Revision != granted.Revision || !reflect.DeepEqual(replayed.GrantedRoots, []string{sibling}) {
+		t.Fatalf("grant CLI replay = %#v, want committed revision %s", replayed, granted.Revision)
+	}
+
+	// A widening grant reusing the SAME instance token chains on the first
+	// revision, accumulates the new root after the already-granted one, and
+	// deduplicates the repeat.
+	second, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	accumulated := runSDDAttemptStatus(t, []string{
+		"grant", "--cwd", repo, "--change", change, "--expected-revision", granted.Revision,
+		"--root", second, "--root", sibling, "--change-instance", instance,
+		"--actor", "maintainer", "--reason", "maintainer widened the change to a second sibling", "--request-id", "cli-grant-2",
+	})
+	if !reflect.DeepEqual(accumulated.GrantedRoots, []string{sibling, second}) {
+		t.Fatalf("accumulated CLI granted roots = %#v, want [%q %q]", accumulated.GrantedRoots, sibling, second)
+	}
+}
+
+func TestRunSDDAttemptHelpContractsCoverEveryOperation(t *testing.T) {
+	tests := []struct {
+		operation string
+		flags     []string
+		contracts []string
+	}{
+		{"status", []string{"cwd", "change", "change-instance"}, []string{"optional", "128 bytes"}},
+		{"begin", []string{"cwd", "change", "expected-revision", "request-id", "work-unit", "evidence-goal", "max-attempts", "max-changed-lines"}, []string{"default 2", "default 200", "1..100", "1..1000000"}},
+		{"finish", []string{"cwd", "change", "expected-revision", "request-id", "outcome", "evidence-revision", "diagnosis", "harness-disposition", "cleanup-evidence", "process-evidence", "expected-binding-revision", "successor-lineage", "remediates-evidence-revision"}, []string{"failed, interrupted, or passed", "reused or invalidated", "never none", "500 bytes"}},
+		{"handoff", []string{"cwd", "change", "expected-revision", "request-id", "destination-worktree"}, []string{"registered linked worktree", "Git common directory"}},
+		{"reset", []string{"cwd", "change", "expected-revision", "request-id", "reason", "actor"}, []string{"500 bytes", "128 bytes"}},
+		{"rescope", []string{"cwd", "change", "expected-revision", "request-id", "work-unit", "evidence-goal", "max-attempts", "max-changed-lines", "reason", "actor"}, []string{"explicit limit", "cannot exceed current objective"}},
+		{"acquire", []string{"cwd", "change", "token", "request-id", "work-unit", "evidence-goal", "max-attempts", "max-changed-lines", "remediates-evidence-revision"}, []string{"default 2", "default 200", "unmanaged remediation"}},
+		{"settle", []string{"cwd", "change", "token", "request-id", "outcome", "evidence-revision", "diagnosis", "harness-disposition", "cleanup-evidence", "process-evidence", "successor-lineage", "remediates-evidence-revision"}, []string{"opaque token returned by acquire", "never none"}},
+		{"grant", []string{"cwd", "change", "expected-revision", "root", "change-instance", "request-id", "actor", "reason"}, []string{"repeatable", "1..32", "4096 bytes"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.operation, func(t *testing.T) {
+			var output bytes.Buffer
+			if err := RunSDDAttempt([]string{tt.operation, "--help"}, &output); err != nil {
+				t.Fatalf("RunSDDAttempt(%s --help): %v", tt.operation, err)
+			}
+			if want := "Usage: gentle-ai sdd-attempt " + tt.operation + " [flags]"; !strings.Contains(output.String(), want) {
+				t.Fatalf("help missing %q:\n%s", want, output.String())
+			}
+			if got := sddAttemptHelpFlagNames(output.String()); !reflect.DeepEqual(got, tt.flags) {
+				t.Fatalf("help flags = %v, want %v\n%s", got, tt.flags, output.String())
+			}
+			for _, contract := range tt.contracts {
+				if !strings.Contains(output.String(), contract) {
+					t.Fatalf("help missing contract %q:\n%s", contract, output.String())
+				}
+			}
+		})
+	}
+
+	var overview bytes.Buffer
+	if err := RunSDDAttempt([]string{"--help"}, &overview); err != nil {
+		t.Fatalf("RunSDDAttempt(--help): %v", err)
+	}
+	for _, operation := range sddAttemptOperationNames() {
+		if !strings.Contains(overview.String(), operation) {
+			t.Fatalf("overview omits %q:\n%s", operation, overview.String())
+		}
+	}
+}
+
+func TestRunSDDAttemptHelpAliasesArePositionIndependentAndRepositoryFree(t *testing.T) {
+	missingRepository := filepath.Join(t.TempDir(), "does-not-exist")
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"parent long alias", []string{"--help", "--cwd", missingRepository}, "Usage: gentle-ai sdd-attempt <"},
+		{"parent short alias", []string{"-h", "--change", "missing"}, "Usage: gentle-ai sdd-attempt <"},
+		{"operation after help", []string{"--help", "begin", "--cwd", missingRepository, "--change", "missing"}, "Usage: gentle-ai sdd-attempt begin [flags]"},
+		{"operation before short alias", []string{"finish", "--cwd", missingRepository, "-h", "--change", "missing"}, "Usage: gentle-ai sdd-attempt finish [flags]"},
+		{"help between status inputs", []string{"status", "--change-instance", "instance", "--help", "--cwd", missingRepository, "--change", "missing"}, "Usage: gentle-ai sdd-attempt status [flags]"},
+		{"trailing grant help", []string{"grant", "--cwd", missingRepository, "--root", missingRepository, "--change", "missing", "--help"}, "Usage: gentle-ai sdd-attempt grant [flags]"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var output bytes.Buffer
+			if err := RunSDDAttempt(tt.args, &output); err != nil {
+				t.Fatalf("RunSDDAttempt(%v): %v", tt.args, err)
+			}
+			if !strings.Contains(output.String(), tt.want) {
+				t.Fatalf("help missing %q:\n%s", tt.want, output.String())
+			}
+		})
+	}
+}
+
+func TestRunSDDAttemptHelpDoesNotSelectOperationLikeFlagValues(t *testing.T) {
+	tests := []struct {
+		name  string
+		args  []string
+		value string
+	}{
+		{"path", []string{"--help", "--cwd", "status"}, "status"},
+		{"change", []string{"--help", "--change", "begin"}, "begin"},
+		{"revision", []string{"--help", "--expected-revision", "finish"}, "finish"},
+		{"request ID", []string{"--help", "--request-id", "reset"}, "reset"},
+		{"work unit", []string{"--help", "--work-unit", "rescope"}, "rescope"},
+		{"reason", []string{"--help", "--reason", "acquire"}, "acquire"},
+		{"actor", []string{"--help", "--actor", "settle"}, "settle"},
+		{"outcome", []string{"--help", "--outcome", "grant"}, "grant"},
+		{"missing value before help", []string{"--change", "--help", "begin"}, "begin"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var output bytes.Buffer
+			if err := RunSDDAttempt(tt.args, &output); err != nil {
+				t.Fatalf("RunSDDAttempt(%v): %v", tt.args, err)
+			}
+			if !strings.Contains(output.String(), "Usage: gentle-ai sdd-attempt <") {
+				t.Fatalf("operation-like value %q selected operation help:\n%s", tt.value, output.String())
+			}
+		})
+	}
+}
+
+func sddAttemptHelpFlagNames(output string) []string {
+	flags := []string{}
+	for _, line := range strings.Split(output, "\n") {
+		if !strings.HasPrefix(line, "  --") {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) != 0 {
+			flags = append(flags, strings.TrimPrefix(fields[0], "--"))
+		}
+	}
+	return flags
 }
 
 func runSDDAttemptStatus(t *testing.T, args []string) sddstatus.RuntimeStatus {

@@ -464,7 +464,7 @@ func TestCorrectionScopeExpansionPrioritizesPendingFinalize(t *testing.T) {
 	}
 }
 
-func TestCompactTargetStatusUsesCurrentProofAndLiveProjection(t *testing.T) {
+func TestCompactTargetStatusUsesExactCurrentCandidateAndLiveProjection(t *testing.T) {
 	repo := initSnapshotRepo(t)
 	writeSnapshotFile(t, repo, "tracked.txt", "candidate\n")
 	writeSnapshotFile(t, repo, "new.txt", "initial\n")
@@ -475,12 +475,12 @@ func TestCompactTargetStatusUsesCurrentProofAndLiveProjection(t *testing.T) {
 	fix, _ := builder.Build(context.Background(), Target{Kind: TargetFixDiff, BaseRef: initial.CandidateTree, IntendedUntracked: []string{"new.txt"}, LedgerIDs: []string{"R1-001"}})
 	state := CompactState{InitialSnapshot: initial, CurrentSnapshot: fix, GenesisPaths: initial.Paths}
 	if !compactLiveTargetMatchesSnapshot(context.Background(), repo, state, live, true) {
-		t.Fatal("terminal correction did not match current intended-untracked proof")
+		t.Fatal("terminal correction did not match the exact current candidate")
 	}
 	wrongProof := state
 	wrongProof.CurrentSnapshot.IntendedUntrackedProof = initial.IntendedUntrackedProof
-	if compactLiveTargetMatchesSnapshot(context.Background(), repo, wrongProof, live, true) {
-		t.Fatal("terminal correction accepted a stale intended-untracked proof")
+	if !compactLiveTargetMatchesSnapshot(context.Background(), repo, wrongProof, live, true) {
+		t.Fatal("terminal correction rejected an exact candidate for a stale intended-untracked proof")
 	}
 	projection := targetProjectionFromCompact(state, targetProjectionFromSnapshot(live))
 	if projection.Kind != live.Kind || projection.PathsDigest != live.PathsDigest || projection.IntendedUntrackedProof != live.IntendedUntrackedProof || projection.CurrentSnapshotIdentity != live.Identity || projection.InitialSnapshotIdentity != initial.Identity {
@@ -973,7 +973,7 @@ func TestCompactAuthorityLockFailuresAreOperational(t *testing.T) {
 		&AuthorityLockTimeoutError{Timeout: 2 * time.Second},
 		&AuthorityLockCancelledError{Cause: context.Canceled},
 	} {
-		if !compactAuthorityOperationalFailure(err) {
+		if !IsCompactAuthorityOperationalFailure(err) {
 			t.Fatalf("authority lock failure classified as semantic corruption: %T", err)
 		}
 	}
@@ -1280,12 +1280,12 @@ func TestAssessTargetStatusPropagatesOperationalAuthorityFailures(t *testing.T) 
 
 	t.Run("git timeout", func(t *testing.T) {
 		repo := targetStatusOperationalFailureFixture(t, "status-git-timeout")
-		originalCommand, originalTimeout, originalWait := gitCommandContext, localGitCommandTimeout, gitCommandWaitDelay
+		originalCommand, originalTimeout, originalWait := gitCommandContext, LocalGitCommandTimeout, gitCommandWaitDelay
 		t.Cleanup(func() {
-			gitCommandContext, localGitCommandTimeout, gitCommandWaitDelay = originalCommand, originalTimeout, originalWait
+			gitCommandContext, LocalGitCommandTimeout, gitCommandWaitDelay = originalCommand, originalTimeout, originalWait
 		})
 		t.Setenv("GENTLE_AI_TARGET_STATUS_GIT_HELPER", "sleep")
-		localGitCommandTimeout, gitCommandWaitDelay = 25*time.Millisecond, 10*time.Millisecond
+		LocalGitCommandTimeout, gitCommandWaitDelay = 25*time.Millisecond, 10*time.Millisecond
 		gitCommandContext = func(ctx context.Context, name string, args ...string) *exec.Cmd {
 			if gitInvocationContains(args, "--git-common-dir") {
 				return exec.CommandContext(ctx, os.Args[0], "-test.run=^TestTargetStatusGitHelperProcess$", "--")
