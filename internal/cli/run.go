@@ -228,18 +228,29 @@ func RunInstall(args []string, detection system.DetectionResult) (InstallResult,
 		Persona:                     string(input.Selection.Persona),
 	}
 	newState.SetSelection(input.Selection)
-	if len(flags.Agents) > 0 {
-		merged, err := mergeExplicitAgentInstallState(homeDir, newState, agentIDs, flags)
-		if err != nil {
-			return result, fmt.Errorf("merge explicit agent install state: %w", err)
-		}
-		newState = merged
+	writer, err := managedAssetDigest()
+	if err != nil {
+		return result, fmt.Errorf("derive managed asset writer identity: %w", err)
 	}
-	if err := state.Write(homeDir, newState); err != nil {
+	if err := persistInstallState(homeDir, newState, agentIDs, flags, writer); err != nil {
 		return result, fmt.Errorf("persist install state: %w", err)
 	}
 
 	return result, nil
+}
+
+func persistInstallState(homeDir string, newState state.InstallState, agentIDs []string, flags InstallFlags, writer string) error {
+	return withInstallStateLock(homeDir, func() error {
+		if len(flags.Agents) > 0 {
+			merged, err := mergeExplicitAgentInstallState(homeDir, newState, agentIDs, flags)
+			if err != nil {
+				return fmt.Errorf("merge explicit agent install state: %w", err)
+			}
+			newState = merged
+		}
+		newState.ManagedAssetDigest = writer
+		return state.Write(homeDir, newState)
+	})
 }
 
 // mergeExplicitAgentInstallState merges a fresh single-agent install's state
@@ -1821,6 +1832,16 @@ func backupTargets(homeDir, workspaceDir string, scope InstallScope, selection m
 				if adapter.Agent() == model.AgentClaudeCode {
 					paths[adapter.MCPConfigPath(homeDir, "engram")] = struct{}{}
 				}
+			}
+		}
+		// Persona backup captures every managed output-style file, not just the
+		// selected one, so a failed persona switch can restore the file its
+		// cleanup removed. Backup-only: verification stays on the selected file.
+		if component == model.ComponentPersona {
+			for _, path := range managedOutputStyleBackupPaths(selection, adapters, func(a agents.Adapter) string {
+				return a.OutputStyleDir(componentPathDirScoped(homeDir, workspaceDir, scope, a, model.ComponentPersona))
+			}) {
+				paths[path] = struct{}{}
 			}
 		}
 	}

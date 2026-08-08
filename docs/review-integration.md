@@ -103,6 +103,8 @@ Consumers MUST NOT reconstruct receipts, derive canonical hashes, inspect the Gi
 
 `gentle-ai review capture-result` is an additive headless command, not a negotiated repository operation. It accepts no `--contract`; the provider-issued subject hash selects the transport version. Capture emits a manifest with capability `review.native_result_artifact` and schema `gentle-ai.review-result-artifact/v2`; the manifest binds `subject_hash` and `admission_decision: completed`, and exactly one provider-owned `path` or opaque `reference` locates the durable admitted-result envelope (`review-admitted-result/v1` for a v1 subject, `review-admitted-result/v2` for a v2 subject). A negotiated capture transition carries `--repository-context <opaque-handle>` plus `--expected-revision <revision>`, so consumers can invoke capture from an unrelated working directory without learning the repository path. Explicit `--cwd` remains the capture compatibility path-manifest mode and cannot be combined with a repository-context handle.
 
+Add `--preflight --input <file>` to validate the same native admission without persistence. A successful input preflight emits `gentle-ai.review-capture-result-dry-run/v1` with `validation: accepted` and the existing lineage, lens, order, and subject binding. It does not emit an artifact path, reference, raw-input hash, or canonical-result hash. `--preflight` without `--input` retains the binding-only response.
+
 ### Choose the target explicitly
 
 | Invocation | Frozen boundary |
@@ -255,9 +257,7 @@ One recovery-only target expands an approved base-diff receipt into the exact st
 | `missing_authority_binding` | Terminal — internal invariant violation: applicability was `current_target` but no authority binding resolved. File a defect; there is no caller-side retry. |
 | `native_stop_required` | Terminal — the authority state (for example an escalated lineage not yet eligible for recovery) accepts no automated action from this negotiation. Requires maintainer review of the lineage before any further command. |
 | `original_finalize_request_required` | Re-run `gentle-ai review finalize --lineage <id>` with the exact original content-bound payload (results/evidence). A different payload is a typed reconciliation failure, not a retry — see "Re-run a non-terminal FINALIZE" above. |
-| `pre_pr_selector_unrepresentable` | Pass a symbolic ref name for `--base-ref` (for example `origin/<branch>`), not a raw commit SHA, when selecting the pre-pr gate. |
 | `recovery_scope_unchanged` | Change the candidate so its target identity differs from the current authority's, then retry the same selector-scoped `review.recover` once the identities differ. |
-| `recovery_target_unrepresentable` | Use one of the three representable recovery selector shapes: no base selector for current-changes, `--base-ref <ref> --committed-only` for base-diff, or `--workspace-overlay --base-ref <ref>` (optionally with `--projection staged`) for workspace overlay. |
 | `staged_workspace_overlay_recovery_unavailable` | Terminal for a fresh target — staged projection combined with `--workspace-overlay` is recovery-only. Pass `--lineage <id>` to recover an existing lineage, or drop `--workspace-overlay` and run `gentle-ai review start --projection staged` to start fresh. |
 | `unchanged_or_unverified_authority` | Terminal — the single correction attempt for this lineage is already consumed without a verified candidate change. `gentle-ai review start` on this exact unchanged candidate only resumes this same lineage, not a fresh one. Change the candidate content first, then run `gentle-ai review start` to begin a genuinely new lineage. |
 
@@ -349,7 +349,7 @@ The provider does not auto-upgrade, migrate, rewrite, quarantine, or delete lega
 
 ## Respect compatibility and non-goals
 
-Protocol v1 supports `workspace` and `staged` projections and preserves existing compact authority and receipt schemas. Published archives contain the versioned JSON Schemas and conformance fixtures under `contracts/review-integration/v1/`; consumers should validate against those packaged bytes rather than copying private Go structs.
+Protocol v1 supports `workspace` and `staged` projections and preserves existing compact authority and receipt schemas. Published archives contain the versioned JSON Schemas and conformance fixtures under `contracts/review-integration/v1/` and `contracts/review-integration/v2/`; consumers should validate against those packaged bytes rather than copying private Go structs.
 
 This contract does not implement Gentle Pi, select a model or provider, transmit repository data, add remote telemetry, claim Windows runtime durability, define an archive coordinator, defend against a malicious actor with local filesystem access, or authorize a command merely because review passed.
 
@@ -373,6 +373,8 @@ Each release archive contains:
 
 - `contracts/review-integration/v1/schemas/` — 24 strict JSON Schemas, including preserved capability protocols v1.0–v1.4, current v1.5, versioned START/status/result-artifact contracts, outcome-bound verification evidence, final-verification incident, classified repair, provider subject/admission, correction planning, and targeted validation.
 - `contracts/review-integration/v1/fixtures/` — 27 deterministic conformance fixtures, including all six capability minors, preserved v1 plus current v2 START/status examples, outcome-bound verification evidence, the final-verification incident and retry projection, classified repair preflight, and typed failure envelopes.
+- `contracts/review-integration/v2/schemas/` — 15 strict JSON Schemas, including the capture-result dry-run response contract.
+- `contracts/review-integration/v2/fixtures/` — 9 deterministic conformance fixtures, including the capture-result dry-run response.
 - `docs/review-integration.md` — this ownership and consumption guide.
 
 Repository maintainers can verify source inventory or a complete GoReleaser snapshot:
