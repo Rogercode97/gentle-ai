@@ -67,16 +67,14 @@ func UserSkillDirs(home string) []string {
 		filepath.Join(home, ".config", "kilo", "skills"),
 		filepath.Join(home, ".claude", "skills"),
 		filepath.Join(home, ".gemini", "skills"),
-		// Antigravity CLI surface (Mission Control CLI installs here).
-		filepath.Join(home, ".gemini", "antigravity-cli", "skills"),
 		// Antigravity Desktop surface (Mission Control desktop app installs here).
 		filepath.Join(home, ".gemini", "antigravity-desktop", "skills"),
+		// Antigravity CLI surface (Mission Control CLI installs here).
+		filepath.Join(home, ".gemini", "antigravity-cli", "skills"),
 		// Legacy Antigravity location retained additively for backward compatibility
 		// with older installs and any tooling that still uses the bare `.gemini/antigravity`
 		// path. New installs should prefer the variant-specific dirs above.
 		filepath.Join(home, ".gemini", "antigravity", "skills"),
-		filepath.Join(home, ".gemini", "antigravity-desktop", "skills"),
-		filepath.Join(home, ".gemini", "antigravity-cli", "skills"),
 		filepath.Join(home, ".cursor", "skills"),
 		filepath.Join(home, ".copilot", "skills"),
 		filepath.Join(home, ".codex", "skills"),

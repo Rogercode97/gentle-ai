@@ -314,11 +314,12 @@ func TestCapabilities(t *testing.T) {
 	if got := a.CommandsDir("/tmp/home"); got != "" {
 		t.Fatalf("CommandsDir() = %q, want empty string", got)
 	}
-	if got := a.SubAgentsDir("/tmp/home"); got != "" {
-		t.Fatalf("SubAgentsDir() = %q, want empty string", got)
+	wantSubAgentsDir := filepath.Join(a.GlobalConfigDir("/tmp/home"), "agents")
+	if got := a.SubAgentsDir("/tmp/home"); got != wantSubAgentsDir {
+		t.Fatalf("SubAgentsDir() = %q, want %q", got, wantSubAgentsDir)
 	}
-	if got := a.EmbeddedSubAgentsDir(); got != "" {
-		t.Fatalf("EmbeddedSubAgentsDir() = %q, want empty string", got)
+	if got := a.EmbeddedSubAgentsDir(); got != "kiro/agents" {
+		t.Fatalf("EmbeddedSubAgentsDir() = %q, want %q", got, "kiro/agents")
 	}
 }
 

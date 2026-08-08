@@ -72,10 +72,11 @@ func checkAntigravityDynamicSubagentRuntime(homeDir string) []CheckResult {
 	hardeningOK := sdd.HasAntigravitySddAgentsHardeningContract(homeDir)
 	detail := "Antigravity dynamic subagent hardening plugin is installed at " +
 		sdd.AntigravitySddAgentsPluginDir(homeDir)
-	remedy := (*doctor.Remedy)(nil)
+	var checkRemedy *doctor.Remedy
 	if !hardeningOK {
 		detail = "Antigravity dynamic subagent hardening plugin is NOT installed; dynamic subagents will not be bound to the SDD/Review/JD tool-hardening contract."
-		remedy = doctor.NewRemedy(doctor.RemedyInstall, fmt.Sprintf("Run `gentle-ai install --agent antigravity` (or `gentle-ai sync`) to install the gentle-ai-sdd-agents plugin under %s/plugins/.", configDir))
+		remedyMsg := fmt.Sprintf("Run `gentle-ai install --agent antigravity` (or `gentle-ai sync`) to install the gentle-ai-sdd-agents plugin under %s/plugins/.", configDir)
+		checkRemedy = doctor.NewRemedy(doctor.RemedySync, remedyMsg)
 	}
 	status := CheckStatusPass
 	if !hardeningOK {
@@ -90,7 +91,7 @@ func checkAntigravityDynamicSubagentRuntime(homeDir string) []CheckResult {
 		Name:   "antigravity:dynamic-subagent-hardening",
 		Status: status,
 		Detail: detail,
-		Remedy: remedy,
+		Remedy: checkRemedy,
 	})
 
 	return results

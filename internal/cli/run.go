@@ -2253,7 +2253,12 @@ func sddSubAgentPaths(homeDir string, adapter agents.Adapter) []string {
 		if entry.IsDir() {
 			continue
 		}
-		paths = append(paths, filepath.Join(adapter.SubAgentsDir(homeDir), entry.Name()))
+		if adapter.Agent() == model.AgentAntigravity {
+			agentName := strings.TrimSuffix(entry.Name(), ".md")
+			paths = append(paths, filepath.Join(adapter.SubAgentsDir(homeDir), agentName, "agent.md"))
+		} else {
+			paths = append(paths, filepath.Join(adapter.SubAgentsDir(homeDir), entry.Name()))
+		}
 	}
 
 	return paths

@@ -102,7 +102,7 @@ func RunDoctor(ctx context.Context, w io.Writer) error {
 
 	pathDirs := pathDirsFn()
 	requiredTools := requiredDoctorTools(installedAgents)
-	checks := make([]doctor.Check, 0, len(requiredTools)+3)
+	checks := make([]doctor.Check, 0, len(requiredTools)+4)
 	for _, tool := range requiredTools {
 		tool := tool
 		checks = append(checks, doctor.Check{ID: doctor.ToolCheckID(tool), Run: func(context.Context) doctor.Result {
@@ -114,6 +114,16 @@ func RunDoctor(ctx context.Context, w io.Writer) error {
 		doctor.Check{ID: doctor.CheckEngramReachable, Run: func(ctx context.Context) doctor.Result { return checkEngramReachable(ctx, homeDir, installedAgents) }},
 		doctor.Check{ID: doctor.CheckDiskSpace, Run: func(context.Context) doctor.Result { return checkDiskSpace(homeDir) }},
 	)
+	for _, res := range checkAntigravityDynamicSubagentRuntime(homeDir) {
+		r := res
+		checks = append(checks, doctor.Check{ID: doctor.CheckID(r.Name), Run: func(context.Context) doctor.Result {
+			return doctor.Result{
+				Status: r.Status,
+				Detail: r.Detail,
+				Remedy: r.Remedy,
+			}
+		}})
+	}
 	report := (doctor.Runner{Checks: checks}).Run(ctx)
 	report.Checks = append(report.Checks, checkAntigravityDynamicSubagentRuntime(homeDir)...)
 

@@ -105,8 +105,8 @@ func TestCheckAntigravityDynamicSubagentRuntime_AntigravityNoPlugin(t *testing.T
 	if results[1].Status != CheckStatusWarn {
 		t.Errorf("results[1].Status = %q, want %q", results[1].Status, CheckStatusWarn)
 	}
-	if results[1].Remedy == "" {
-		t.Error("results[1].Remedy must be non-empty when the hardening contract is missing")
+	if results[1].Remedy == nil {
+		t.Error("results[1].Remedy must be non-nil when the hardening contract is missing")
 	}
 	// The runtime-probe limitation MUST be documented in the detail so
 	// users understand why this check does not shell-probe
