@@ -38,6 +38,13 @@ func journeySources() []journeySource {
 		{"journeys_intended_untracked.go", intendedUntrackedJourneys()},
 		{"journeys_capture_result_dry_run.go", captureResultDryRunJourneys()},
 		{"journeys_finding_id_prefix.go", findingIDPrefixJourneys()},
+		{"journeys_rescope_write_guard.go", rescopeWriteGuardJourneys()},
+		{"journeys_rescope_evidence_retry.go", rescopeEvidenceOnlyRetryJourneys()},
+		{"journeys_consecutive_rescope_repair.go", consecutiveRescopeRepairJourneys()},
+		{"journeys_reviewed_superset.go", reviewedSupersetJourneys()},
+		{"journeys_staged_delivery.go", stagedDeliveryJourneys()},
+		{"journeys_frozen_lineage_resume.go", frozenLineageResumeJourneys()},
+		{"journeys_managed_assets.go", managedAssetJourneys()},
 	}
 }
 
