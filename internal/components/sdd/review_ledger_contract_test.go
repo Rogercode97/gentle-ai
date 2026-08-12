@@ -338,7 +338,20 @@ func TestKilocodeReviewSettingsMatchCurrentMainBaseline(t *testing.T) {
 	// the shared contract. Kilocode embeds it in the orchestrator prompt, so
 	// the hash moved. A rendered comparison against origin/main confirmed this
 	// is the only changed settings scalar.
-	const want = "c614460175fbf92a20d7b372c7e5a179ffac3dd46f54b92e5510ad5389816eae"
+	// The defect handoff's admissibility gate now tests what PRODUCED a failure
+	// instead of whether the workflow appeared blocked, so the automated report
+	// stops filing other projects' defects. Kilocode embeds the orchestrator in
+	// its settings, so the hash moved. Deliberate, not drift.
+	// #2117 adds the sdd_task_dispatch_latched sentence to the shared
+	// transport-failure paragraph: a relaunch after an empty or malformed
+	// phase result never dispatches, so the orchestrator must not read the
+	// replayed envelope as a fresh attempt. Kilocode embeds that orchestrator
+	// contract, so the hash moved. Deliberate, not drift.
+	// #3102 adds the empty_base_diff_bootstrap_required STOP continuation to
+	// the shared contract. Kilocode embeds that contract, so the hash moved.
+	// #2773 adds the lens_context_budget_exceeded STOP continuation. Kilocode
+	// embeds that contract, so the hash moved.
+	const want = "94a5921877824fc9b74b194c43d17c3f7f1ffd3f80199ce9f4b07bef1e47bdd3"
 	if got != want {
 		t.Fatalf("Kilocode settings SHA-256 = %s, want current-main baseline %s", got, want)
 	}
@@ -569,8 +582,12 @@ func TestOpenCodeRenderedReviewProtocolCost(t *testing.T) {
 		// which is the direction this table exists to protect.
 		// #2758 adds one staged-delivery STOP continuation (383 rendered
 		// characters per row). The ceilings preserve the required 15% headroom.
-		{name: "standard", agents: []string{"review-reliability"}, beforeChars: 42_301, wantChars: 21_261, maxCharacters: 24_500},
-		{name: "full-4R", agents: []string{"review-risk", "review-resilience", "review-readability", "review-reliability"}, beforeChars: 106_998, wantChars: 33_606, maxCharacters: 38_700},
+		// #3102 adds one empty-base-diff bootstrap STOP continuation (448 rendered
+		// characters per row). The ceilings preserve the required 15% headroom.
+		// #2773 adds one lens-context-budget terminal continuation (379 rendered
+		// characters per row). The ceilings preserve the required 15% headroom.
+		{name: "standard", agents: []string{"review-reliability"}, beforeChars: 42_301, wantChars: 22_088, maxCharacters: 26_000},
+		{name: "full-4R", agents: []string{"review-risk", "review-resilience", "review-readability", "review-reliability"}, beforeChars: 106_998, wantChars: 34_433, maxCharacters: 41_000},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -133,6 +133,11 @@ var reviewStopReasonNarration = map[string]string{
 		"reopen their lenses over the same frozen content: run `gentle-ai review reopen-results --prepare --cwd <repo> --lineage <id> " +
 		"--expected-revision <revision> --target <target> --reason <reason> --actor <actor> --quarantine-lens <lens>` " +
 		"(repeat `--quarantine-lens` per affected lens) and follow its output.",
+	"empty_base_diff_bootstrap_required": "This selected committed base has no changes to review. " +
+		"If you are following the authorized first-publication bootstrap, a maintainer must first insert an empty root below the content commit. " +
+		"Then run `gentle-ai review status --cwd <repo> --contract gentle-ai.review-integration/v2 --agent " + reviewUndeclaredRuntimeIdentitySlot + " --next-transition --base-ref <empty-root> --committed-only`.",
+	"lens_context_budget_exceeded": "This frozen candidate cannot fit complete reviewer evidence without truncation, so this review stops before an inspection result. " +
+		"Reduce the candidate scope or target identity, then run `gentle-ai review start` for that new candidate; or run `" + reviewModeDisableCloneCommand + "` " + reviewModeDisableCloneCaveat + " to deliver under ordinary repository policy instead.",
 	"correction_repository_verification_failed": "Repository verification failed for this correction candidate. Change the candidate within the open correction, then re-run " +
 		"`gentle-ai review status --cwd <repo> --contract gentle-ai.review-integration/v2 --agent " + reviewUndeclaredRuntimeIdentitySlot + " --next-transition` " +
 		"to capture evidence for the new candidate.",
@@ -293,13 +298,12 @@ func reviewNarrateForecast(forecast ReviewForecast) {
 // registry is a package-level map with no caller context, so the statements
 // carry a slot rather than a constant: a narration that told every runtime to
 // rerun as `claude-code` would invite a Codex or OpenCode reader to declare a
-// false identity and pass the transport admission check under Claude Code's
-// capability profile (issue #2440). An undeclared caller keeps the slot, which
-// asks the reader to name themselves instead of naming them wrongly.
+// false identity and pass the transport admission check under another runtime's
+// capability profile. An undeclared caller omits the entire optional segment.
 func bindNarrationRuntimeIdentity(statement string, runtimeAgent model.AgentID) string {
 	identity := strings.TrimSpace(string(runtimeAgent))
 	if identity == "" {
-		return statement
+		return strings.ReplaceAll(statement, " --agent "+reviewUndeclaredRuntimeIdentitySlot, "")
 	}
 	return strings.ReplaceAll(statement, reviewUndeclaredRuntimeIdentitySlot, identity)
 }

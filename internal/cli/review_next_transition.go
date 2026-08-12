@@ -11,9 +11,10 @@ import (
 )
 
 const (
-	reviewNextTransitionExecute = "execute"
-	reviewNextTransitionCollect = "collect"
-	reviewNextTransitionStop    = "stop"
+	reviewNextTransitionExecute     = "execute"
+	reviewNextTransitionCollect     = "collect"
+	reviewNextTransitionStop        = "stop"
+	reviewTargetedValidationPurpose = "targeted-validation"
 )
 
 // ReviewNextTransition is the sole negotiated routing decision. Its execute
@@ -134,6 +135,14 @@ func newReviewNextTransition(status ReviewTargetStatusResult, selectedLenses []s
 				input.Selector.Projection == reviewtransaction.ProjectionStaged {
 				return reviewStopTransition("staged_workspace_overlay_recovery_unavailable")
 			}
+			// #3102: an explicitly selected base-diff with no paths reaches the
+			// same empty_candidate_scope preflight refusal as a clean workspace.
+			// The base is already provider-bound, so collecting it again cannot
+			// change the scope. Follow #1641's authorized empty-root bootstrap
+			// policy instead; STATUS must not advertise a START it knows fails.
+			if status.Projection.Kind == reviewtransaction.TargetBaseDiff && len(status.Projection.Paths) == 0 {
+				return reviewStopTransition("empty_base_diff_bootstrap_required")
+			}
 			// A workspace candidate that froze zero paths is the one fresh
 			// target whose START cannot succeed: the facade refuses it in
 			// preflight with empty_candidate_scope and names base_ref as the
@@ -180,6 +189,12 @@ func newReviewNextTransition(status ReviewTargetStatusResult, selectedLenses []s
 		bindingTarget = reviewAuthorityTargetIdentity(status)
 	}
 	binding := reviewTransitionBinding(status.Authority, bindingTarget, input.RepositoryContext)
+	if status.Authority.State == reviewtransaction.StateReviewing && artifactErr != nil {
+		return reviewStopTransition("captured_artifacts_unverifiable")
+	}
+	if status.Authority.State == reviewtransaction.StateReviewing && input.LensContextBudgetExceeded {
+		return reviewStopTransition("lens_context_budget_exceeded")
+	}
 	if status.Action == reviewtransaction.TargetStatusActionReconcileFinalize {
 		return reviewStopTransition("original_finalize_request_required")
 	}
@@ -233,7 +248,7 @@ func newReviewNextTransition(status ReviewTargetStatusResult, selectedLenses []s
 			}
 			return reviewCollectTransition("targeted_validation_required", ReviewTransitionInput{
 				Name: "targeted_validation", Schema: reviewtransaction.TargetedValidationRequestSchema,
-				CaptureOperation: "external.run_targeted_validation", Arguments: reviewBindingArguments(validationBinding),
+				CaptureOperation: "external.run_targeted_validation", Arguments: reviewTargetedValidationArguments(input.Contract, validationBinding, *input.ValidationRequest),
 				ValidationRequest: input.ValidationRequest,
 				Submission:        reviewTargetedValidationSubmission(input.Contract, validationBinding, *input.ValidationRequest),
 			})
@@ -500,6 +515,7 @@ type reviewNextTransitionInput struct {
 	IntendedUntracked                              reviewIntendedUntrackedScope
 	RDDMode                                        reviewtransaction.RDDModeStatus
 	RDDModeResolved                                bool
+	LensContextBudgetExceeded                      bool
 	PreCommitDeliveryAssessment                    *reviewtransaction.CompactGateTargetApplicability
 }
 
@@ -875,6 +891,15 @@ func reviewBindingArguments(binding ReviewTransitionBinding) []ReviewTransitionA
 	return []ReviewTransitionArgument{{Name: "lineage", Value: binding.LineageID}, {Name: "expected-revision", Value: binding.Revision}, {Name: "target", Value: binding.TargetIdentity}}
 }
 
+func reviewTargetedValidationArguments(contract string, binding ReviewTransitionBinding, request reviewtransaction.TargetedValidationRequest) []ReviewTransitionArgument {
+	arguments := reviewBindingArguments(binding)
+	if contract == ReviewIntegrationContractV2 {
+		arguments = append(arguments, ReviewTransitionArgument{Name: "repository-context", Value: binding.RepositoryContext},
+			ReviewTransitionArgument{Name: "purpose", Value: reviewTargetedValidationPurpose}, ReviewTransitionArgument{Name: "request-hash", Value: request.RequestHash})
+	}
+	return arguments
+}
+
 func reviewTransitionBinding(authority *ReviewTargetStatusAuthority, target string, repositoryContext ...string) ReviewTransitionBinding {
 	contextHandle := ""
 	if len(repositoryContext) > 0 {
@@ -1022,6 +1047,10 @@ func reviewReasonDescription(reason string) string {
 		return "The staged delivery candidate must exactly match the approved review"
 	case "staged_workspace_overlay_recovery_unavailable":
 		return "Staged workspace overlay recovery is unavailable"
+	case "empty_base_diff_bootstrap_required":
+		return "Committed base-diff has no paths; empty-root bootstrap is required"
+	case "lens_context_budget_exceeded":
+		return "Frozen reviewer context exceeds the native evidence budget"
 	case "corrupted_or_unverifiable_authority":
 		return "Review authority is corrupted or unverifiable"
 	case "missing_authority_binding":
