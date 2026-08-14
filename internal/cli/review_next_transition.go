@@ -232,7 +232,12 @@ func newReviewNextTransition(status ReviewTargetStatusResult, selectedLenses []s
 			{Name: "lineage", Value: binding.LineageID}, {Name: "captured_results", Value: "true"},
 		}
 		if reviewProviderCaptureRuntime(input.RuntimeAgent) {
-			arguments = append(arguments, ReviewTransitionArgument{Name: "agent", Value: string(input.RuntimeAgent)})
+			// Finalize's preflight refuses --agent outside the negotiated v2
+			// contract, so the rendered transition must carry the contract
+			// its own consumer will demand.
+			arguments = append(arguments,
+				ReviewTransitionArgument{Name: "contract", Value: input.Contract},
+				ReviewTransitionArgument{Name: "agent", Value: string(input.RuntimeAgent)})
 		}
 		return reviewExecuteTransition("captured_results_ready", "review.finalize", arguments, []ReviewTransitionArgument{{Name: "state", Value: "reviewing"}, {Name: "captured_artifacts", Value: "complete"}}, binding, artifacts)
 	case reviewtransaction.StateCorrectionRequired:
@@ -444,7 +449,12 @@ func reviewFinalizeNextTransition(state reviewtransaction.CompactState, revision
 	if state.State == reviewtransaction.StateReviewing && artifactErr == nil {
 		arguments := []ReviewTransitionArgument{{Name: "lineage", Value: state.LineageID}, {Name: "captured_results", Value: "true"}}
 		if reviewProviderCaptureRuntime(transitionContext.RuntimeAgent) {
-			arguments = append(arguments, ReviewTransitionArgument{Name: "agent", Value: string(transitionContext.RuntimeAgent)})
+			// Finalize's preflight refuses --agent outside the negotiated v2
+			// contract, so the rendered transition must carry the contract
+			// its own consumer will demand.
+			arguments = append(arguments,
+				ReviewTransitionArgument{Name: "contract", Value: transitionContext.Contract},
+				ReviewTransitionArgument{Name: "agent", Value: string(transitionContext.RuntimeAgent)})
 		}
 		return reviewExecuteTransition("captured_results_ready", "review.finalize", arguments, []ReviewTransitionArgument{{Name: "state", Value: "reviewing"}, {Name: "captured_artifacts", Value: "complete"}}, reviewTransitionBinding(status.Authority, status.TargetIdentity), artifacts)
 	}
@@ -457,7 +467,7 @@ func reviewFinalizeNextTransition(state reviewtransaction.CompactState, revision
 
 func reviewMissingCaptureTransition(binding ReviewTransitionBinding, selectedLenses []string, artifacts []ReviewTransitionArtifact, context *reviewCaptureContext, runtime ...model.AgentID) ReviewNextTransition {
 	providerRuntime := model.AgentID("")
-	if len(runtime) > 0 && reviewProviderCaptureRuntime(runtime[0]) {
+	if len(runtime) > 0 && (reviewProviderCaptureRuntime(runtime[0]) || reviewProviderHostRelayMaterializeRuntime(runtime[0])) {
 		providerRuntime = runtime[0]
 	}
 	captured := make(map[int]bool, len(artifacts))
@@ -539,8 +549,33 @@ func reviewCaptureInput(binding ReviewTransitionBinding, lens string, order int,
 			input.BaseTree, input.CandidateTree = context.FrozenContext.BaseTree, context.FrozenContext.CandidateTree
 		}
 	}
-	if len(runtime) > 0 && reviewProviderCaptureRuntime(runtime[0]) {
-		input.Arguments = append(input.Arguments, ReviewTransitionArgument{Name: "agent", Value: string(runtime[0])})
+	if len(runtime) > 0 {
+		switch {
+		case reviewProviderCaptureRuntime(runtime[0]):
+			input.Arguments = append(input.Arguments, ReviewTransitionArgument{Name: "agent", Value: string(runtime[0])})
+		case reviewProviderHostRelayMaterializeRuntime(runtime[0]):
+			// The Pi host relay learns the whole flow from this one input: the
+			// materialize arguments are only the prelude that prints the
+			// Go-issued opaque prompt bytes for its fresh locked-down reviewer
+			// subprocess, and the submission descriptor -- the same binding
+			// tokens with the raw result substituted into --input -- is what
+			// actually advances reviewing authority.
+			tokens := make([]string, 0, len(input.Arguments)+1)
+			for _, argument := range input.Arguments {
+				tokens = append(tokens, reviewTransitionArgumentToken(argument))
+			}
+			tokens = append(tokens, "--input="+reviewSubmissionValuePlaceholder)
+			input.Submission = &ReviewTransitionSubmission{
+				OperationToken: "capture-result", ArgumentTokens: tokens,
+				Value: &ReviewTransitionSubmissionValue{
+					Slot: "reviewer_result", Domain: "artifact_path_or_stdin", Schema: reviewReviewerSchemaID,
+					SubstitutionLocation: len(tokens) - 1,
+				},
+			}
+			input.Arguments = append(input.Arguments,
+				ReviewTransitionArgument{Name: "agent", Value: string(runtime[0])},
+				ReviewTransitionArgument{Name: "materialize", Value: "true"})
+		}
 	}
 	return input
 }
