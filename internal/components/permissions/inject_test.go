@@ -17,7 +17,6 @@ import (
 	"github.com/gentleman-programming/gentle-ai/v2/internal/agents/hermes"
 	"github.com/gentleman-programming/gentle-ai/v2/internal/agents/opencode"
 	"github.com/gentleman-programming/gentle-ai/v2/internal/agents/vscode"
-	"github.com/gentleman-programming/gentle-ai/v2/internal/model"
 )
 
 func claudeAdapter() agents.Adapter      { return claude.NewAdapter() }
@@ -358,11 +357,224 @@ func TestInjectCursorSkipsPermissions(t *testing.T) {
 	}
 }
 
-func TestInjectAntigravitySkipsPermissions(t *testing.T) {
-	overlay := agentOverlay(model.AgentAntigravity)
-	if overlay != nil {
-		t.Errorf("expected nil overlay for Antigravity, got %s", overlay)
-	}
+func TestInjectAntigravityPermissions(t *testing.T) {
+	t.Run("fresh injection", func(t *testing.T) {
+		home := t.TempDir()
+		adapter := antigravityAdapter()
+
+		result, err := Inject(home, adapter)
+		if err != nil {
+			t.Fatalf("Inject() error = %v", err)
+		}
+		if !result.Changed {
+			t.Fatal("expected result.Changed to be true on fresh injection")
+		}
+
+		settingsPath := TargetPath(home, adapter)
+		if len(result.Files) != 1 || result.Files[0] != settingsPath {
+			t.Fatalf("expected files = [%q], got %v", settingsPath, result.Files)
+		}
+
+		content, err := os.ReadFile(settingsPath)
+		if err != nil {
+			t.Fatalf("failed to read settings file: %v", err)
+		}
+
+		var settings map[string]any
+		if err := json.Unmarshal(content, &settings); err != nil {
+			t.Fatalf("failed to parse settings JSON: %v", err)
+		}
+
+		perms, ok := settings["permissions"].(map[string]any)
+		if !ok {
+			t.Fatalf("permissions node missing or invalid: %#v", settings)
+		}
+
+		allowList, ok := perms["allow"].([]any)
+		if !ok {
+			t.Fatalf("allow list missing or invalid: %#v", perms)
+		}
+
+		expected := map[string]bool{
+			"command(gentle-ai)":                false,
+			"command(codegraph)":                false,
+			"command(git)":                      false,
+			"mcp(engram/mem_capture_passive)":   false,
+			"mcp(engram/mem_compare)":           false,
+			"mcp(engram/mem_context)":           false,
+			"mcp(engram/mem_current_project)":   false,
+			"mcp(engram/mem_doctor)":            false,
+			"mcp(engram/mem_get_observation)":   false,
+			"mcp(engram/mem_judge)":             false,
+			"mcp(engram/mem_pin)":               false,
+			"mcp(engram/mem_review)":            false,
+			"mcp(engram/mem_save)":              false,
+			"mcp(engram/mem_save_prompt)":       false,
+			"mcp(engram/mem_search)":            false,
+			"mcp(engram/mem_session_end)":       false,
+			"mcp(engram/mem_session_start)":     false,
+			"mcp(engram/mem_session_summary)":   false,
+			"mcp(engram/mem_suggest_topic_key)": false,
+			"mcp(engram/mem_unpin)":             false,
+			"mcp(engram/mem_update)":            false,
+		}
+
+		for _, entry := range allowList {
+			s, ok := entry.(string)
+			if ok {
+				if _, ok := expected[s]; ok {
+					expected[s] = true
+				}
+			}
+		}
+
+		for cmd, found := range expected {
+			if !found {
+				t.Errorf("missing expected command in allow list: %s", cmd)
+			}
+		}
+		if len(allowList) != 21 {
+			t.Errorf("expected exactly 21 commands in allow list, got %d", len(allowList))
+		}
+	})
+
+	t.Run("union merge and preservation", func(t *testing.T) {
+		home := t.TempDir()
+		adapter := antigravityAdapter()
+		settingsPath := TargetPath(home, adapter)
+
+		// Create settings directory
+		if err := os.MkdirAll(filepath.Dir(settingsPath), 0o755); err != nil {
+			t.Fatalf("failed to create settings dir: %v", err)
+		}
+
+		initialSettings := map[string]any{
+			"toolPermission":       "ask",
+			"artifactReviewPolicy": "strict",
+			"permissions": map[string]any{
+				"allow": []any{"command(custom)", "command(git)"},
+				"deny":  []any{"command(malicious)"},
+			},
+		}
+
+		initialJSON, err := json.Marshal(initialSettings)
+		if err != nil {
+			t.Fatalf("marshal initial settings: %v", err)
+		}
+
+		if err := os.WriteFile(settingsPath, initialJSON, 0o644); err != nil {
+			t.Fatalf("write initial settings: %v", err)
+		}
+
+		result, err := Inject(home, adapter)
+		if err != nil {
+			t.Fatalf("Inject() error = %v", err)
+		}
+		if !result.Changed {
+			t.Fatal("expected result.Changed to be true on merge")
+		}
+
+		content, err := os.ReadFile(settingsPath)
+		if err != nil {
+			t.Fatalf("read settings: %v", err)
+		}
+
+		var settings map[string]any
+		if err := json.Unmarshal(content, &settings); err != nil {
+			t.Fatalf("unmarshal merged settings: %v", err)
+		}
+
+		// Verify preferences are preserved
+		if val, ok := settings["toolPermission"].(string); !ok || val != "ask" {
+			t.Errorf("expected toolPermission = 'ask', got %v", settings["toolPermission"])
+		}
+		if val, ok := settings["artifactReviewPolicy"].(string); !ok || val != "strict" {
+			t.Errorf("expected artifactReviewPolicy = 'strict', got %v", settings["artifactReviewPolicy"])
+		}
+
+		perms, ok := settings["permissions"].(map[string]any)
+		if !ok {
+			t.Fatalf("permissions node missing")
+		}
+
+		// Verify deny is preserved
+		denyList, ok := perms["deny"].([]any)
+		if !ok || len(denyList) != 1 || denyList[0] != "command(malicious)" {
+			t.Errorf("deny list was modified: %#v", perms["deny"])
+		}
+
+		// Verify allow list is union-merged
+		allowList, ok := perms["allow"].([]any)
+		if !ok {
+			t.Fatalf("allow list missing")
+		}
+
+		expected := map[string]bool{
+			"command(custom)":                   false,
+			"command(gentle-ai)":                false,
+			"command(codegraph)":                false,
+			"command(git)":                      false,
+			"mcp(engram/mem_capture_passive)":   false,
+			"mcp(engram/mem_compare)":           false,
+			"mcp(engram/mem_context)":           false,
+			"mcp(engram/mem_current_project)":   false,
+			"mcp(engram/mem_doctor)":            false,
+			"mcp(engram/mem_get_observation)":   false,
+			"mcp(engram/mem_judge)":             false,
+			"mcp(engram/mem_pin)":               false,
+			"mcp(engram/mem_review)":            false,
+			"mcp(engram/mem_save)":              false,
+			"mcp(engram/mem_save_prompt)":       false,
+			"mcp(engram/mem_search)":            false,
+			"mcp(engram/mem_session_end)":       false,
+			"mcp(engram/mem_session_start)":     false,
+			"mcp(engram/mem_session_summary)":   false,
+			"mcp(engram/mem_suggest_topic_key)": false,
+			"mcp(engram/mem_unpin)":             false,
+			"mcp(engram/mem_update)":            false,
+		}
+
+		for _, entry := range allowList {
+			s, ok := entry.(string)
+			if ok {
+				if _, ok := expected[s]; ok {
+					expected[s] = true
+				}
+			}
+		}
+
+		for cmd, found := range expected {
+			if !found {
+				t.Errorf("missing expected command in allow list: %s", cmd)
+			}
+		}
+		if len(allowList) != 22 {
+			t.Errorf("expected exactly 22 commands in allow list, got %d", len(allowList))
+		}
+	})
+
+	t.Run("idempotency", func(t *testing.T) {
+		home := t.TempDir()
+		adapter := antigravityAdapter()
+
+		// Run first time
+		result1, err := Inject(home, adapter)
+		if err != nil {
+			t.Fatalf("first Inject() error = %v", err)
+		}
+		if !result1.Changed {
+			t.Fatal("expected first run to make changes")
+		}
+
+		// Run second time
+		result2, err := Inject(home, adapter)
+		if err != nil {
+			t.Fatalf("second Inject() error = %v", err)
+		}
+		if result2.Changed {
+			t.Fatal("expected second run result.Changed to be false")
+		}
+	})
 }
 
 // TestInjectCodexNeverWritesConfig pins the decision that gentle-ai writes

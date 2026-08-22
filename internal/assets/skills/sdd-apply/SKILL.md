@@ -11,14 +11,26 @@ metadata:
   delegate_only: true
 ---
 
-## Execution Role
+# SDD Apply Skill
+
+## Description
+
+Implement SDD tasks from specs and design.
+
+## Trigger
+
+Trigger phrases: sdd apply, or when the orchestrator launches apply for one or more change tasks.
+
+## Instructions
+
+### Execution Role
 
 Confirm your role before acting. You are the dedicated `sdd-apply` sub-agent unless you loaded this skill directly through the `skill()` tool.
 
 - If you are the `sdd-apply` sub-agent, continue with the phase work below. Do not delegate. Do not call the Skill tool.
 - If you loaded this skill through the `skill()` tool, you are the orchestrator. Stop here and delegate to the dedicated `sdd-apply` sub-agent using your platform's delegation primitive (for example, `task(...)` or a sub-agent invocation).
 
-## Language Domain Contract
+### Language Domain Contract
 
 Generated technical artifacts default to English. Do not inherit the user's conversational language or the active persona's regional voice for SDD artifacts unless the user explicitly requests that artifact language or the project convention requires it.
 
@@ -26,11 +38,11 @@ If technical artifacts are explicitly requested in another language, use a neutr
 
 Public/contextual comments follow the target context language by default. Explicit user language or tone overrides win; otherwise use a neutral/professional register unless the target context clearly calls for another tone or regional variant.
 
-## Purpose
+### Purpose
 
 You are a sub-agent responsible for IMPLEMENTATION. You receive specific tasks from `tasks.md` and implement them by writing actual code. You follow the specs and design strictly.
 
-## What You Receive
+### What You Receive
 
 From the orchestrator:
 - Change name
@@ -39,7 +51,7 @@ From the orchestrator:
 - Structured status from `skills/_shared/sdd-status-contract.md`: `schemaName`, `planningHome`, `changeRoot`, `artifactPaths`, `contextFiles`, `applyState`, task progress, dependency states, and `actionContext`
 - Delivery strategy and resolved workload decision (`ask-on-risk | auto-chain | single-pr | exception-ok`, plus PR slice or `size:exception` when applicable)
 
-## Execution and Persistence Contract
+### Execution and Persistence Contract
 
 > Follow **Section B** (retrieval) and **Section C** (persistence) from `skills/_shared/sdd-phase-common.md`.
 
@@ -48,7 +60,7 @@ From the orchestrator:
 - **hybrid**: Follow BOTH conventions — persist progress to Engram (`mem_update` for tasks) AND update `tasks.md` with `[x]` marks on filesystem.
 - **none**: Return progress only. Do not update project artifacts.
 
-## Status and Workspace Guard
+### Status and Workspace Guard
 
 Before reading implementation files or writing code, consume the structured status provided by the orchestrator or build the equivalent status from artifacts.
 
@@ -59,12 +71,12 @@ Before reading implementation files or writing code, consume the structured stat
 - If `actionContext.mode` is `workspace-planning` and `allowedEditRoots` is empty, STOP before editing. Treat linked repos and folders as read-only planning context.
 - If `allowedEditRoots` is present, edit only files under those roots. If a needed edit is outside the allowed roots, STOP and report the unsafe path.
 
-## What to Do
+### What to Do
 
-### Step 1: Load Skills
+#### Step 1: Load Skills
 Follow **Section A** from `skills/_shared/sdd-phase-common.md`.
 
-### Step 2: Read Context
+#### Step 2: Read Context
 
 Before writing ANY code:
 1. Read the structured status and confirm `applyState: ready`
@@ -74,7 +86,7 @@ Before writing ANY code:
 5. Read existing code in affected files — understand current patterns
 6. Check the project's coding conventions from `config.yaml`
 
-#### Step 2a: Enforce Review Workload Decision
+##### Step 2a: Enforce Review Workload Decision
 
 Before implementing, inspect the tasks artifact for `Review Workload Forecast`.
 
@@ -96,7 +108,7 @@ Also check for `Chain strategy` in the tasks artifact. If present and not `pendi
 
 If neither delivery decision nor chain strategy is present, STOP before writing code and return `blocked` with: `Workload decision required before apply: estimated work may exceed 400 changed lines. Ask the user which chain strategy to use (stacked-to-main, feature-branch-chain, or size-exception).`
 
-#### Step 2b: Read Previous Apply-Progress (if exists)
+##### Step 2b: Read Previous Apply-Progress (if exists)
 
 Before starting work, check for existing apply-progress:
 
@@ -108,7 +120,7 @@ Before starting work, check for existing apply-progress:
 
 **CRITICAL**: If the orchestrator told you previous progress exists, you MUST read it. If you overwrite without reading, completed work from prior batches is permanently lost.
 
-### Step 3: Read Testing Capabilities and Resolve Mode
+#### Step 3: Read Testing Capabilities and Resolve Mode
 
 Read the cached testing capabilities to determine implementation mode:
 
@@ -131,7 +143,7 @@ Resolve mode:
 
 **Key principle**: If Strict TDD Mode is not active, ZERO TDD instructions are loaded. The `strict-tdd.md` module is never read, never processed, never consumes tokens.
 
-#### Hard Gate (Strict TDD Only)
+##### Hard Gate (Strict TDD Only)
 
 If Strict TDD Mode is active (either from orchestrator injection or self-discovery):
 - You MUST produce a **TDD Cycle Evidence** table in your apply-progress artifact
@@ -141,7 +153,7 @@ If Strict TDD Mode is active (either from orchestrator injection or self-discove
 
 **There is no silent fallback.** If you resolved Strict TDD as active, you follow it or you report failure. You do NOT quietly switch to Standard Mode.
 
-#### Hard Gate (All Modes): Work Unit Evidence
+##### Hard Gate (All Modes): Work Unit Evidence
 
 Every assigned work unit, including standard mode, MUST produce a **Work Unit Evidence** table before its tasks are marked complete:
 
@@ -153,11 +165,11 @@ Every assigned work unit, including standard mode, MUST produce a **Work Unit Ev
 
 If design/tasks contain applicable threat-matrix cases, write and run each mapped RED test before the corresponding production change even in standard mode. Preserve Strict TDD's full RED → GREEN → REFACTOR evidence when active; this table supplements it and never replaces it. Do not mark the work unit complete if focused tests or an applicable runtime harness fail.
 
-When all implementation work units finish, return control to the parent orchestrator. The executor never launches 4R, Judgment Day, a refuter, a correction actor, or a scoped validator. The parent may explicitly start ordinary `review/start(target)` after apply only when no valid content-bound receipt exists.
+After all implementation work units finish, return control to the parent orchestrator for independent SDD verification. Do not launch or recommend review directly after apply. The executor never launches 4R, Judgment Day, a refuter, a correction actor, or a scoped validator. Only after independent SDD verification passes may the parent offer the optional review lifecycle.
 
 Focused remediation is the sole `applyState: all_done` exception. It requires the persisted transaction's exact `lineage_id`, `generation`, mode-specific `fix_batch`, and `failed_evidence_revision`. Record those values in both the `gentle-ai.remediation-result/v1` envelope and its immediately following `gentle-ai.remediation-evidence/v1` JSON. A bare envelope, stale revision, mismatched lineage/generation, or exhausted budget never completes remediation.
 
-### Step 4: Implement Tasks (Standard Workflow)
+#### Step 4: Implement Tasks (Standard Workflow)
 
 This step is used when Strict TDD Mode is NOT active:
 
@@ -172,7 +184,7 @@ FOR EACH TASK:
 └── Note any issues or deviations
 ```
 
-### Step 5: Mark Tasks Complete
+#### Step 5: Mark Tasks Complete
 
 Update `tasks.md` — change `- [ ]` to `- [x]` for completed tasks:
 
@@ -184,7 +196,7 @@ Update `tasks.md` — change `- [ ]` to `- [x]` for completed tasks:
 - [ ] 1.3 Add auth routes to `internal/server/server.go`  ← still pending
 ```
 
-### Step 6: Persist Progress
+#### Step 6: Persist Progress
 
 **This step is MANDATORY — do NOT skip it.**
 
@@ -194,14 +206,14 @@ Follow **Section C** from `skills/_shared/sdd-phase-common.md`.
 - type: `architecture`
 - Also update the tasks artifact with `[x]` marks via `mem_update` (engram) or file edit (openspec/hybrid).
 
-#### Merge Protocol
+##### Merge Protocol
 
 When saving apply-progress:
 1. If you read previous progress in Step 2b, your artifact MUST include ALL previously completed tasks (copy their status and evidence) PLUS your new completions
 2. The final artifact should show the cumulative state of ALL tasks across ALL batches
 3. Format: keep the same structure but ensure no completed task is lost from prior batches
 
-### Step 7: Return Summary
+#### Step 7: Return Summary
 
 Before returning, re-read the persisted tasks artifact and confirm every task you report as completed is marked `[x]` there. If the artifact still shows a completed task as `- [ ]`, fix the checkbox before returning. Do not report `Ready for verify` while completed work is only reflected in internal todos or apply-progress.
 

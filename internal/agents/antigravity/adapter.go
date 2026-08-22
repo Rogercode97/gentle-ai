@@ -153,7 +153,7 @@ func (a *Adapter) SubAgentsDir(homeDir string) string {
 }
 
 func (a *Adapter) EmbeddedSubAgentsDir() string {
-	return "kiro/agents"
+	return "antigravity/agents"
 }
 
 func (a *Adapter) SupportsSkills() bool {

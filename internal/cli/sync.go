@@ -1600,10 +1600,7 @@ func runSyncWithSelection(homeDir string, selection model.Selection, background 
 		return result, err
 	}
 
-	orchestrator := pipeline.NewOrchestrator(
-		pipeline.DefaultRollbackPolicy(),
-		pipeline.WithFailurePolicy(pipeline.ContinueOnError),
-	)
+	orchestrator := pipeline.NewOrchestrator(pipeline.DefaultRollbackPolicy())
 	result.Execution = orchestrator.Execute(stagePlan)
 	compatibilityChanged := rt.state.compatibilityChangedFiles()
 	rt.state.cleanupRollbackSnapshot()
@@ -2153,7 +2150,6 @@ func runPostSyncVerification(homeDir, workspaceDir string, selection model.Selec
 				checks = append(checks, verify.Check{
 					ID:          "verify:sync:file:" + currentPath,
 					Description: "legacy OpenCode background agents plugin removed",
-					Soft:        true,
 					Run: func(context.Context) error {
 						if _, err := os.Stat(currentPath); err != nil {
 							if os.IsNotExist(err) {
@@ -2169,7 +2165,6 @@ func runPostSyncVerification(homeDir, workspaceDir string, selection model.Selec
 			checks = append(checks, verify.Check{
 				ID:          "verify:sync:file:" + currentPath,
 				Description: "synced file exists",
-				Soft:        true,
 				Run: func(context.Context) error {
 					if _, err := os.Stat(currentPath); err != nil {
 						return err

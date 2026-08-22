@@ -10,7 +10,19 @@ metadata:
   delegate_only: true
 ---
 
-## Execution Role
+# SDD Propose Skill
+
+## Description
+
+Create an SDD change proposal with intent, scope, capabilities, and approach.
+
+## Trigger
+
+Trigger phrases: sdd propose, or when the orchestrator launches proposal work for a change.
+
+## Instructions
+
+### Execution Role
 
 Confirm your role before acting. You are the dedicated `sdd-propose` sub-agent unless you loaded this skill directly through the `skill()` tool.
 
@@ -18,7 +30,7 @@ Confirm your role before acting. You are the dedicated `sdd-propose` sub-agent u
 - If you loaded this skill through the `skill()` tool, you are the orchestrator. Stop here and delegate to the dedicated `sdd-propose` sub-agent using your platform's delegation primitive (for example, `task(...)` or a sub-agent invocation).
 
 
-## Language Domain Contract
+### Language Domain Contract
 
 Generated technical artifacts default to English. Do not inherit the user's conversational language or the active persona's regional voice for SDD artifacts unless the user explicitly requests that artifact language or the project convention requires it.
 
@@ -26,18 +38,18 @@ If technical artifacts are explicitly requested in another language, use a neutr
 
 Public/contextual comments follow the target context language by default. Explicit user language or tone overrides win; otherwise use a neutral/professional register unless the target context clearly calls for another tone or regional variant.
 
-## Purpose
+### Purpose
 
 You are a sub-agent responsible for creating PROPOSALS. You take the exploration analysis (or direct user input) and produce a structured `proposal.md` document inside the change folder.
 
-## What You Receive
+### What You Receive
 
 From the orchestrator:
 - Change name (e.g., "add-dark-mode")
 - Exploration analysis (from sdd-explore) OR direct user description
 - Artifact store mode (`engram | openspec | hybrid | none`)
 
-## Execution and Persistence Contract
+### Execution and Persistence Contract
 
 > Follow **Section B** (retrieval) and **Section C** (persistence) from `skills/_shared/sdd-phase-common.md`.
 
@@ -47,9 +59,9 @@ From the orchestrator:
 - **none**: Return result only. Never create or modify project files.
 - Never force `openspec/` creation unless user requested file-based persistence or mode is `hybrid`.
 
-## What to Do
+### What to Do
 
-### Step 0: Shape the Proposal in Interactive Mode
+#### Step 0: Shape the Proposal in Interactive Mode
 
 - In interactive SDD mode, do not make the executor decide silently whether the proposal is "clear enough". Offer the user a proposal question round before finalizing the proposal: explain that the questions are meant to improve the PRD/proposal by uncovering business rules, implications, impact, edge cases, and product tradeoffs. Let the user answer, skip, correct the framing, or ask for a second question round.
 - Proposal-shaping questions should uncover business/product/PRD understanding, not harness mechanics. Cover the smallest useful subset of:
@@ -65,10 +77,10 @@ From the orchestrator:
   10. business risk or tradeoff: what downside matters most if the proposal chooses the wrong direction.
 - Prefer 3–5 concrete product questions per round. After the first answers, summarize the resulting proposal assumptions and ask whether the user wants to correct anything or run a second question round. Do not ask about test commands, PR shape, changed-line budget, or other harness decisions unless the user explicitly asks to discuss delivery. If blocked from asking directly, write a `## Proposal question round` section in the proposal result with the proposed questions and assumptions needing user review.
 
-### Step 1: Load Skills
+#### Step 1: Load Skills
 Follow **Section A** from `skills/_shared/sdd-phase-common.md`.
 
-### Step 2: Create Change Directory
+#### Step 2: Create Change Directory
 
 **IF mode is `openspec` or `hybrid`:** create the change folder structure:
 
@@ -79,7 +91,7 @@ openspec/changes/{change-name}/
 
 **IF mode is `engram` or `none`:** Do NOT create any `openspec/` directories. Skip this step.
 
-### Step 3: Read Existing Specs
+#### Step 3: Read Existing Specs
 
 **IF mode is `openspec` or `hybrid`:** If `openspec/specs/` has relevant specs, read them to understand current behavior that this change might affect.
 
@@ -87,7 +99,7 @@ openspec/changes/{change-name}/
 
 **IF mode is `none`:** Skip — no existing specs to read.
 
-### Step 4: Write proposal.md
+#### Step 4: Write proposal.md
 
 ```markdown
 # Proposal: {Change Title}
@@ -157,7 +169,7 @@ Reference the recommended approach from exploration if available.}
 - [ ] {Measurable outcome}
 ```
 
-### Step 5: Persist Artifact
+#### Step 5: Persist Artifact
 
 **This step is MANDATORY — do NOT skip it.**
 
@@ -166,7 +178,7 @@ Follow **Section C** from `skills/_shared/sdd-phase-common.md`.
 - topic_key: `sdd/{change-name}/proposal`
 - type: `architecture`
 
-### Step 6: Return Summary
+#### Step 6: Return Summary
 
 Return to the orchestrator:
 
@@ -201,3 +213,4 @@ Ready for specs (sdd-spec) or design (sdd-design).
 - If nothing changes at the spec level (pure refactor, config change), explicitly write "None" under both sub-sections — don't leave them as template placeholders
 - **Size budget**: Proposal artifact MUST be under 450 words. Use bullet points and tables over prose. Headers organize, not explain.
 - Return envelope per **Section D** from `skills/_shared/sdd-phase-common.md`.
+

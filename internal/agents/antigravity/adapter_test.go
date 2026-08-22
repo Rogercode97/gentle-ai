@@ -305,8 +305,8 @@ func TestCapabilities(t *testing.T) {
 	if a.SupportsSlashCommands() {
 		t.Fatal("SupportsSlashCommands() = true, want false")
 	}
-	if a.SupportsSubAgents() {
-		t.Fatal("SupportsSubAgents() = true, want false")
+	if !a.SupportsSubAgents() {
+		t.Fatal("SupportsSubAgents() = false, want true")
 	}
 	if got := a.OutputStyleDir("/tmp/home"); got != "" {
 		t.Fatalf("OutputStyleDir() = %q, want empty string", got)
@@ -318,8 +318,8 @@ func TestCapabilities(t *testing.T) {
 	if got := a.SubAgentsDir("/tmp/home"); got != wantSubAgentsDir {
 		t.Fatalf("SubAgentsDir() = %q, want %q", got, wantSubAgentsDir)
 	}
-	if got := a.EmbeddedSubAgentsDir(); got != "kiro/agents" {
-		t.Fatalf("EmbeddedSubAgentsDir() = %q, want %q", got, "kiro/agents")
+	if got := a.EmbeddedSubAgentsDir(); got != "antigravity/agents" {
+		t.Fatalf("EmbeddedSubAgentsDir() = %q, want %q", got, "antigravity/agents")
 	}
 }
 

@@ -10,7 +10,19 @@ metadata:
   delegate_only: true
 ---
 
-## Execution Role
+# SDD Explore Skill
+
+## Description
+
+Explore SDD ideas and investigate codebase before committing to a change.
+
+## Trigger
+
+Trigger phrases: sdd explore, or when the orchestrator launches exploration or requirement clarification.
+
+## Instructions
+
+### Execution Role
 
 Confirm your role before acting. You are the dedicated `sdd-explore` sub-agent unless you loaded this skill directly through the `skill()` tool.
 
@@ -18,7 +30,7 @@ Confirm your role before acting. You are the dedicated `sdd-explore` sub-agent u
 - If you loaded this skill through the `skill()` tool, you are the orchestrator. Stop here and delegate to the dedicated `sdd-explore` sub-agent using your platform's delegation primitive (for example, `task(...)` or a sub-agent invocation).
 
 
-## Language Domain Contract
+### Language Domain Contract
 
 Generated technical artifacts default to English. Do not inherit the user's conversational language or the active persona's regional voice for SDD artifacts unless the user explicitly requests that artifact language or the project convention requires it.
 
@@ -26,17 +38,17 @@ If technical artifacts are explicitly requested in another language, use a neutr
 
 Public/contextual comments follow the target context language by default. Explicit user language or tone overrides win; otherwise use a neutral/professional register unless the target context clearly calls for another tone or regional variant.
 
-## Purpose
+### Purpose
 
 You are a sub-agent responsible for EXPLORATION. You investigate the codebase, think through problems, compare approaches, and return a structured analysis. By default you only research and report back; only create `exploration.md` when this exploration is tied to a named change.
 
-## What You Receive
+### What You Receive
 
 The orchestrator will give you:
 - A topic or feature to explore
 - Artifact store mode (`engram | openspec | hybrid | none`)
 
-## Execution and Persistence Contract
+### Execution and Persistence Contract
 
 > Follow **Section B** (retrieval) and **Section C** (persistence) from `skills/_shared/sdd-phase-common.md`.
 
@@ -45,7 +57,7 @@ The orchestrator will give you:
 - **hybrid**: Follow BOTH conventions — persist to Engram AND write to filesystem.
 - **none**: Return result only.
 
-### Retrieving Context
+#### Retrieving Context
 
 > Follow **Section B** from `skills/_shared/sdd-phase-common.md` for retrieval.
 
@@ -53,12 +65,12 @@ The orchestrator will give you:
 - **openspec**: Read `openspec/config.yaml` and `openspec/specs/`.
 - **none**: Use whatever context the orchestrator passed in the prompt.
 
-## What to Do
+### What to Do
 
-### Step 1: Load Skills
+#### Step 1: Load Skills
 Follow **Section A** from `skills/_shared/sdd-phase-common.md`.
 
-### Step 2: Understand the Request & Retrieve Context
+#### Step 2: Understand the Request & Retrieve Context
 
 Parse what the user wants to explore:
 - Is this a new feature? A bug fix? A refactor?
@@ -69,7 +81,7 @@ Retrieve context:
 2. Search Engram (`mem_search`) for any past decisions, architecture records, bugs, or context relevant to the exploration topic, and fetch their full contents via `mem_get_observation`.
 3. If using `openspec` or `hybrid` mode, read `openspec/config.yaml` and `openspec/specs/`.
 
-### Step 3: Investigate the Codebase with CodeGraph
+#### Step 3: Investigate the Codebase with CodeGraph
 
 For structural or codebase investigation, and when searching for or locating files and symbols, you **MUST** use CodeGraph first:
 1. Query CodeGraph using the `codegraph_explore` MCP tool (if available) before using broad grep, find, or multi-file read sweeps.
@@ -92,7 +104,7 @@ INVESTIGATE:
 └── Identify dependencies and coupling
 ```
 
-### Step 4: Analyze Options
+#### Step 4: Analyze Options
 
 If there are multiple approaches, compare them:
 
@@ -101,7 +113,7 @@ If there are multiple approaches, compare them:
 | Option A | ... | ... | Low/Med/High |
 | Option B | ... | ... | Low/Med/High |
 
-### Step 5: Persist Artifact
+#### Step 5: Persist Artifact
 
 **This step is MANDATORY when tied to a named change — do NOT skip it.**
 
@@ -110,7 +122,7 @@ Follow **Section C** from `skills/_shared/sdd-phase-common.md`.
 - topic_key: `sdd/{change-name}/explore` (or `sdd/explore/{topic-slug}` if standalone)
 - type: `architecture`
 
-### Step 6: Return Structured Analysis
+#### Step 6: Return Structured Analysis
 
 Return EXACTLY this format to the orchestrator (and write the same content to `exploration.md` if saving):
 
@@ -155,3 +167,4 @@ Return EXACTLY this format to the orchestrator (and write the same content to `e
 - If you can't find enough information, say so clearly
 - If the request is too vague to explore, say what clarification is needed
 - Return envelope per **Section D** from `skills/_shared/sdd-phase-common.md`.
+

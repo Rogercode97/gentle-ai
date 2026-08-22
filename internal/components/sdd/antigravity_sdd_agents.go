@@ -55,44 +55,70 @@ const antigravitySddAgentsPluginJSON = `{
 // surface it as a system-level reminder. We do NOT invent Antigravity API
 // fields that the runtime does not consume; this is the safest supported
 // installable permission surface.
-const antigravitySddAgentsHardeningMessage = "Gentle AI SDD/Review/JD hardening contract for Antigravity dynamic sub-agents. " +
-	"This contract mirrors the OpenCode permission.task overlay; Antigravity has no static agent registry, " +
-	"so the policy is enforced as a runtime instruction bound to define_subagent calls. " +
-	"Allowed roles and their tool scopes: " +
-	"sdd-explore = read/search/CodeGraph/Engram only, no source writes; " +
+const antigravitySddAgentsHardeningMessage = "Gentle AI SDD/Review/JD hardening contract for Antigravity sub-agents. " +
+	"This contract mirrors the OpenCode permission.task overlay. Antigravity supports static subagent invocation as primary with dynamic subagent creation (define_subagent) as resilient fallback. " +
+	"Allowed roles and their tool scopes: For any phase requiring direct MCP access (such as sdd-explore using CodeGraph or sdd-init), the orchestrator MUST register dynamic subagents via define_subagent with enable_mcp_tools: true and enable_write_tools correctly scoped (false for explore/read-only lenses, true for apply/verify/init/archive); " +
+	"sdd-explore = read/search/CodeGraph/Engram only, no source writes (enable_write_tools: false); " +
 	"sdd-propose, sdd-spec, sdd-design, sdd-tasks = artifact reads/writes only, no source edits; " +
 	"sdd-apply = source edits and targeted verification commands only, no commit/push/PR/publish/destructive git; " +
 	"sdd-verify = read plus test/build commands, no source edits unless explicitly approved; " +
 	"sdd-archive, sdd-onboard, sdd-init = read plus scoped writes; " +
-	"review-* (including review-risk, review-readability, review-reliability, review-resilience, and review-refuter) and jd-judge-* (including jd-judge-a, jd-judge-b) = read-only, emit ledger rows or verdicts only; " +
+	"review-* (including review-risk, review-readability, review-reliability, review-resilience, and review-refuter) and jd-judge-* (including jd-judge-a, jd-judge-b) = read-only, emit ledger rows or verdicts only (enable_write_tools: false); " +
 	"jd-fix-agent = edit only confirmed ledger findings, do not discover new findings. " +
 	"Strict TDD (Test-Driven Development) enforcement rules: When strict_tdd: true is active, " +
 	"sdd-apply is prohibited from editing production files without first writing or modifying test files and running the test runner to observe test failure (Red phase). " +
 	"sdd-verify must run tests to verify behavior and is prohibited from editing source code. " +
 	"Any attempt to bypass the TDD Red-Green-Refactor sequence must fail closed. " +
-	"Any define_subagent call that tries to widen its tool scope above the allowed scope for that role MUST fail closed and surface status: blocked with the missing capability. " +
-	"Dynamic sub-agents MUST NOT use broad repository search (grep -R, find sweeps, full-tree reads) until CodeGraph has failed or returned insufficient results. " +
+	"Strict phase boundaries contract: sdd-explore MUST NOT write proposals, specifications, design documents, or task lists. Each phase (sdd-init, sdd-propose, sdd-spec, sdd-design, sdd-tasks, sdd-apply, sdd-verify) MUST be executed as its own distinct subagent (invoking directly via invoke_subagent, falling back to define_subagent if uninitialized). Folding planning phases into sdd-explore or executing phases inline is strictly prohibited. " +
+	"Engram memory contract: Both the orchestrator and subagents MUST use Engram (mem_save, mem_search, mem_get_observation) as the primary memory persistence and artifact store under topic keys sdd/{change-name}/{artifact}. Whenever a subagent finishes and returns its result envelope, the orchestrator MUST immediately execute fallback persistence via call_mcp_tool (ServerName=\"engram\", ToolName=\"mem_save\") under topic key sdd/{change-name}/{artifact-type} before proceeding to any subsequent action. " +
+	"Sub-agents MUST NOT use broad repository search (grep -R, find sweeps, full-tree reads) until CodeGraph has failed or returned insufficient results. " +
 	"Web/internet search is denied by default for code implementation, review, and verification phases unless the task explicitly requires external research."
 
-func antigravityActiveConfigDir(homeDir string) string {
-	return antigravity.NewAdapter().GlobalConfigDir(homeDir)
+func antigravityActiveConfigDirs(homeDir string) []string {
+	dirs := []string{antigravity.NewAdapter().GlobalConfigDir(homeDir)}
+	for _, candidate := range []string{
+		filepath.Join(homeDir, ".gemini", "antigravity-cli"),
+		filepath.Join(homeDir, ".gemini", "antigravity-desktop"),
+		filepath.Join(homeDir, ".gemini", "antigravity"),
+		filepath.Join(homeDir, ".gemini", "config"),
+	} {
+		if info, err := os.Stat(candidate); err == nil && info.IsDir() && !slices.Contains(dirs, candidate) {
+			dirs = append(dirs, candidate)
+		}
+	}
+	return dirs
 }
 
 func antigravitySddAgentsPluginDir(homeDir string) string {
-	return filepath.Join(antigravityActiveConfigDir(homeDir), "plugins", antigravitySddAgentsPluginName)
+	return filepath.Join(antigravity.NewAdapter().GlobalConfigDir(homeDir), "plugins", antigravitySddAgentsPluginName)
 }
 
 func antigravitySddAgentsHooksJSON() []byte {
+	hookScript := `node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{let j=JSON.parse(d);if(j.invocationNum>1){console.log("{}");process.exit(0);}}catch(e){}console.log(JSON.stringify({injectSteps:[{ephemeralMessage:` + mustJSONStringSDDAgents(antigravitySddAgentsHardeningMessage) + `}]}));});' || printf '%s\n' '` + mustJSONStringSDDAgents(map[string]any{
+		"injectSteps": []any{
+			map[string]any{"ephemeralMessage": antigravitySddAgentsHardeningMessage},
+		},
+	}) + `'`
+
+	preToolUseScript := `node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{let j=JSON.parse(d);let a=(j.toolCall&&j.toolCall.args)||j.args||j||{};let cmd=a.CommandLine||a.commandLine||a.command||a.cmd||"";let isDestructive=/(?:git\s+push\b.*(?:\s|^)(?:--force|-f)(?:\s|$)|git\s+reset\s+--hard\b|rm\s+-(?:[a-zA-Z]*r[a-zA-Z]*f|[a-zA-Z]*f[a-zA-Z]*r)[a-zA-Z]*\b|rm\s+.*-(?:r.*-f|f.*-r)\b)/i.test(cmd);if(isDestructive){console.log(JSON.stringify({decision:"deny",reason:"Destructive command blocked by Gentle AI SDD guard"}));process.exit(0);}}catch(e){}console.log(JSON.stringify({decision:"allow"}));});' || (d=$(cat); if echo "$d" | grep -Eqi '("(CommandLine|commandLine|command|cmd)"[[:space:]]*:[[:space:]]*"[^"]*(git[[:space:]]+push[^"]*(--force|-f([[:space:]]|"|$))|git[[:space:]]+reset[[:space:]]+--hard|rm[[:space:]]+-([a-zA-Z]*r[a-zA-Z]*f|[a-zA-Z]*f[a-zA-Z]*r)[a-zA-Z]*|rm[[:space:]]+[^"]*-(r[^"]*-f|f[^"]*-r)))'; then printf '%s\n' '{"decision":"deny","reason":"Destructive command blocked by Gentle AI SDD guard"}'; else printf '%s\n' '{"decision":"allow"}'; fi)`
+
 	cfg := map[string]any{
 		"gentle-ai-sdd-agents-hardening": map[string]any{
 			"PreInvocation": []any{
 				map[string]any{
-					"type": "command",
-					"command": "printf '%s\\n' '" + mustJSONStringSDDAgents(map[string]any{
-						"injectSteps": []any{
-							map[string]any{"ephemeralMessage": antigravitySddAgentsHardeningMessage},
+					"type":    "command",
+					"command": hookScript,
+				},
+			},
+			"PreToolUse": []any{
+				map[string]any{
+					"matcher": "run_command",
+					"hooks": []any{
+						map[string]any{
+							"type":    "command",
+							"command": preToolUseScript,
 						},
-					}) + "'",
+					},
 				},
 			},
 		},
@@ -110,35 +136,32 @@ func mustJSONStringSDDAgents(v any) string {
 }
 
 // installAntigravitySddAgentsPlugin writes the gentle-ai-sdd-agents plugin
-// (plugin.json + hooks.json) under ~/.gemini/antigravity-cli/plugins/. It
-// returns (changed, files, err) so the SDD injector can fold the result into
-// its InjectionResult.
-//
-// This is the Antigravity equivalent of the OpenCode sdd-overlay-*.json
-// `permission.task.__replace__` block. We do NOT touch user-owned
-// settings.json or mcp_config.json here — the policy lives entirely inside
-// the plugin so a future uninstall deletes the plugin directory and
-// removes the hardening contract atomically.
+// (plugin.json + hooks.json) under ~/.gemini/antigravity-cli/plugins/ and other
+// active Antigravity config directories. It returns (changed, files, err) so the
+// SDD injector can fold the result into its InjectionResult.
 func installAntigravitySddAgentsPlugin(homeDir string) (bool, []string, error) {
-	pluginDir := antigravitySddAgentsPluginDir(homeDir)
-	files := make([]string, 0, 2)
+	configDirs := antigravityActiveConfigDirs(homeDir)
+	files := make([]string, 0, len(configDirs)*2)
 	changed := false
 
-	pluginPath := filepath.Join(pluginDir, "plugin.json")
-	pluginWrite, err := filemerge.WriteFileAtomic(pluginPath, []byte(antigravitySddAgentsPluginJSON), 0o644)
-	if err != nil {
-		return false, nil, fmt.Errorf("write Antigravity SDD agents plugin manifest: %w", err)
-	}
-	changed = changed || pluginWrite.Changed
-	files = append(files, pluginPath)
+	for _, cfgDir := range configDirs {
+		pluginDir := filepath.Join(cfgDir, "plugins", antigravitySddAgentsPluginName)
+		pluginPath := filepath.Join(pluginDir, "plugin.json")
+		pluginWrite, err := filemerge.WriteFileAtomic(pluginPath, []byte(antigravitySddAgentsPluginJSON), 0o644)
+		if err != nil {
+			return false, nil, fmt.Errorf("write Antigravity SDD agents plugin manifest (%s): %w", cfgDir, err)
+		}
+		changed = changed || pluginWrite.Changed
+		files = append(files, pluginPath)
 
-	hooksPath := filepath.Join(pluginDir, "hooks.json")
-	hooksWrite, err := mergeJSONFile(hooksPath, antigravitySddAgentsHooksJSON())
-	if err != nil {
-		return false, nil, fmt.Errorf("write Antigravity SDD agents plugin hooks: %w", err)
+		hooksPath := filepath.Join(pluginDir, "hooks.json")
+		hooksWrite, err := mergeJSONFile(hooksPath, antigravitySddAgentsHooksJSON())
+		if err != nil {
+			return false, nil, fmt.Errorf("write Antigravity SDD agents plugin hooks (%s): %w", cfgDir, err)
+		}
+		changed = changed || hooksWrite.writeResult.Changed
+		files = append(files, hooksPath)
 	}
-	changed = changed || hooksWrite.writeResult.Changed
-	files = append(files, hooksPath)
 
 	return changed, files, nil
 }
@@ -221,6 +244,16 @@ var antigravitySddAgentsHardeningContractPhrases = []string{
 	"review-resilience",
 	"jd-judge-a",
 	"jd-judge-b",
+	"define_subagent",
+	"invoke_subagent",
+	"enable_mcp_tools: true",
+	"enable_write_tools",
+	"fallback persistence",
+	"call_mcp_tool",
+	"mem_save",
+	"direct MCP access",
+	"Strict phase boundaries contract",
+	"Engram memory contract",
 }
 
 // antigravitySddAgentsHardeningContractForbids is the set of substrings the
@@ -251,7 +284,16 @@ func AntigravitySddAgentsPluginDir(homeDir string) string {
 // plugin is installed AND the hardening contract is present in its hooks.json.
 // This is the read-only, conservative check used by diagnostic surfaces.
 func HasAntigravitySddAgentsHardeningContract(homeDir string) bool {
-	hooksPath := filepath.Join(antigravitySddAgentsPluginDir(homeDir), "hooks.json")
+	for _, cfgDir := range antigravityActiveConfigDirs(homeDir) {
+		hooksPath := filepath.Join(cfgDir, "plugins", antigravitySddAgentsPluginName, "hooks.json")
+		if hasHardeningContractInHooks(hooksPath) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasHardeningContractInHooks(hooksPath string) bool {
 	data, err := readFileOrEmpty(hooksPath)
 	if err != nil {
 		return false

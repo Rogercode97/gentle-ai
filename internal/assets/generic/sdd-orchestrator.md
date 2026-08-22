@@ -51,7 +51,6 @@ When it is ours, never offer to switch to, inspect, modify, or directly repair t
 
 When native SDD status reports `blocked(edit_authority_missing)`, its structured output may carry the typed `gentle-ai.sdd-integration.consent/v1` envelope as the optional `consent` block. Treat that envelope as a Lossless Blocking Prompt under this contract, with the same discipline as the review consent relay. Present the complete envelope once in the active conversation language: faithfully translate the headline, reason, `value`, the missing-root evidence, choice labels, every choice `effect`, and the off-path note, while preserving the original choices, order, selection mode, exact allowed-answer domain, and answer tokens. Never translate or alter the machine answer tokens (`granted`, `declined`), commands, paths, or invocations. Never summarize, reshape, reorder, merge, or omit any part. The human decides: never answer on the human's behalf and never run the grant unprompted. Only after the human's explicit `granted` answer, execute the envelope's exact grant invocation verbatim, exactly once, then re-enter through native status; the granted roots project into `allowedEditRoots`, and the grant is per-change, audited, and dies with archive. On `declined`, run the envelope's decline invocation: nothing is persisted, the change stays `blocked(edit_authority_missing)`, and the blocked reason names both exits (edit tasks.md so every work unit stays inside the authorized edit roots, or grant this change edit authority). A blocked status without a `consent` block names the same two exits; relay them and stop.
 
-
 ### Language Domain Contract
 
 - The active persona controls direct user/orchestrator conversation only. Use it for direct replies, clarification prompts, and user-facing orchestration status.
@@ -67,7 +66,7 @@ These rules select execution topology, not the implementation method. Crossing a
 Core principle: **does this inflate the parent context without need?** If yes, use one bounded worker. If no, do it inline.
 
 | Action | Direct inline | Delegated direct worker |
-|--------|---------------|-------------------------|
+| -------- | --------------- | ------------------------- |
 | Read to decide/verify (1–3 files) | ✅ | — |
 | Read to explore/understand (4+ files) | — | ✅ one narrow mapper |
 | Read as preparation for writing | — | ✅ together with the write |
@@ -88,32 +87,32 @@ These are parent-orchestrator routing boundaries. Use the smallest useful topolo
 2. **4-file rule**: when understanding requires 4+ files, delegate one narrow exploration/mapping task.
 3. **Write rule**: keep one mechanical, already-understood file inline only when it needs no research or unresolved design work; delegate one writer for 2+ non-trivial files.
 4. **Context rule**: delegate reading that prepares a write and broad research/context compression.
-5. **Per-action rule**: tests, builds, installs, and native review actors may use fresh workers without changing the implementation route or creating SDD state.
+5. **Per-action rule**: tests, builds, installs, and native checking actors may use fresh workers without changing the implementation route or creating SDD state.
 6. **Optional SDD rule**: propose SDD only when durable proposal/spec/design/tasks materially reduce substantial ambiguity. Select SDD only after an explicit request or accepted proposal; risk alone never forces SDD.
+7. **Large-Context Window Rule (Gemini/Antigravity)**: Large context window capacity (e.g. 1M+ tokens) NEVER overrides delegation rules. Even if the active model can hold many files in memory, processing 4+ read files or 2+ write files in the parent thread is strictly forbidden and MUST be delegated to subagents.
 
 #### Native Checking Contract
 
 - Final source-mutating normalization happens before functional verification and candidate freeze.
 - **Normalization ordering rule**: before review START and its identity freeze, run every source-mutating normalizer, then re-snapshot the candidate and review those exact bytes, paths, and modes. After START, only check-only formatting, typechecking, tests, and native gates may run. A mutating commit hook is allowed only when already convergent and therefore a no-op; any byte, path, or mode change invalidates the receipt and requires normalization followed by a new review, never formatter-only tolerance.
-- Native RAR owns verification applicability, risk, the bounded zero/one/four-lens plan, correction impact, and the terminal receipt. The orchestrator and adapters never select lenses or author PASS.
+- Native RAR owns verification applicability, risk, the bounded zero/one/four-lens plan, correction impact, and terminal receipt. The orchestrator and adapters never select lenses or author PASS.
 - A passive ordinary document or image needs structural readback, not an artificial semantic-verification subagent. Active, mixed, operational, executable, mode-changing, or unknown content fails closed into the applicable native plan.
 - For a trivial passive documentation-only edit, structural readback is the complete proportional check; do not open a separate semantic-verification or heavy review ceremony.
 - If an applicable verifier is unavailable, preserve the typed unavailable result; never invent PASS, retry indefinitely, or escalate into extra ceremony.
 - An applicable quick check runs once. Long or very-long work gets one cost/side-effect forecast before launch. Unavailable, partial, declined, or exhausted proof becomes one actionable **Needs your decision** result.
 - Functional proof and adversarial review both project as **Checking**. One immutable candidate permits at most one scoped correction; there is no loop-until-clean behavior.
-- Commit, push, PR, direct-main, emergency, and release gates validate the same exact owner-issued receipt/authorization and never reopen review for unchanged content.
+- Commit, push, PR, direct-main, emergency, and release gates are informational and unmanaged; ordinary repository policy decides delivery and they never reopen review for unchanged content.
 
 #### Review Execution Contract
 
-The canonical native bounded-review contract is injected from the shared provider source at render time.
+Runtime-specific lifecycle content is dynamically injected only when the compiled capability advertises it. Other runtimes retain this generic SDD baseline without review-transport promises.
 
 #### Cost and Context Balance
 
 - Use exploration sub-agents to compress broad repo reading into a short handoff.
 - Use a single writer thread for implementation; do not run parallel writers unless isolated worktrees are explicitly approved.
-- Let the native review and delivery providers select checking and delivery actions; repeated gates reuse exact authority and never reopen review for unchanged content.
+- Let the user and ordinary repository policy decide delivery; do not infer authorization from checking output.
 - Avoid delegation for truly local one-file fixes, quick state checks, and already-understood mechanical edits.
-
 
 ## SDD Workflow (Spec-Driven Development)
 
@@ -129,15 +128,17 @@ SDD is the structured planning layer for substantial changes.
 ### Commands
 
 Skills (appear in autocomplete):
+
 - `/sdd-init` → initialize SDD context; detects stack, bootstraps persistence
 - `/sdd-explore <topic>` → investigate an idea; reads codebase, compares approaches; no files created
 - `/sdd-status [change]` → read-only structured status for active change, artifacts, tasks, and next action
 - `/sdd-apply [change]` → implement tasks in batches; checks off items as it goes
 - `/sdd-verify [change]` → validate implementation against specs; reports CRITICAL / WARNING / SUGGESTION
-- `/sdd-archive [change]` → close a change and persist final state in the active artifact store 
+- `/sdd-archive [change]` → close a change and persist final state in the active artifact store
 - `/sdd-onboard` → guided end-to-end walkthrough of SDD using your real codebase
 
 Meta-commands (type directly — orchestrator handles them, won't appear in autocomplete):
+
 - `/sdd-new <change>` → start a new change by delegating exploration + proposal to sub-agents
 - `/sdd-continue [change]` → run the next dependency-ready phase via sub-agent(s)
 - `/sdd-ff <name>` → fast-forward planning: proposal → specs → design → tasks
@@ -157,6 +158,7 @@ Before executing ANY SDD command (`/sdd-new`, `/sdd-ff`, `/sdd-continue`, `/sdd-
 3. If NOT found → run `sdd-init` FIRST (delegate to sdd-init sub-agent), THEN proceed with the requested command
 
 This ensures:
+
 - Testing capabilities are always detected and cached
 - Strict TDD Mode is activated when the project supports it
 - The project context (stack, conventions) is available for all phases
@@ -175,6 +177,7 @@ If the user doesn't specify, default to **Automatic**. After scope approval, exp
 Cache the mode choice for the session — don't ask again unless the user explicitly requests a mode change.
 
 In **Interactive** mode, between phases:
+
 1. Show a concise summary of what the phase produced
 2. List what the next phase will do
 3. Ask: "¿Continuamos? / Continue?" — accept YES/continue, NO/stop, or specific feedback to adjust
@@ -191,6 +194,7 @@ Before the `sdd-propose` phase in interactive mode, offer the user a proposal qu
 In **Automatic** mode the orchestrator is the gatekeeper between phases. The gatekeeper runs after every phase: when a delegated phase returns and BEFORE launching the next sub-agent, the orchestrator MUST validate that the phase reached its objective with everything in order. This is autonomous validation — it does NOT ask the user (that is Interactive mode); it only surfaces to the user when it catches a problem.
 
 **What the gatekeeper checks (every phase, against the Result Contract):**
+
 - **Contract conformance:** the phase returned `status`, `executive_summary`, `artifacts`, `next_recommended`, `risks`, and `skill_resolution`, and `status` indicates success (not partial, failed, or blocked).
 - **Artifact existence:** the declared artifact actually exists and is readable in the active backend — read it back (engram: `mem_search` + `mem_get_observation` on the topic key; openspec: read the file path). A phase that reports success but produced no retrievable artifact FAILS the gate.
 - **No hallucination:** every file path, symbol, command, or artifact the phase claims it created or referenced must actually exist; spot-check the concrete claims. A referenced path that does not resolve FAILS the gate.
@@ -198,6 +202,7 @@ In **Automatic** mode the orchestrator is the gatekeeper between phases. The gat
 - **Routing coherence:** `next_recommended` follows the Dependency Graph and `risks` are within tolerance (no unaddressed CRITICAL).
 
 **Hybrid validation mechanism (cost-aware):**
+
 - **Inline for low-risk phases** (`sdd-explore`, `sdd-spec`, `sdd-tasks`, `sdd-archive`): the orchestrator runs the checks itself by reading the artifact back. No extra sub-agent.
 - **Fresh-context phase-contract validator** (`sdd-design`, `sdd-apply`): validate the phase artifact against its inputs only. This is not adversarial implementation review, does not inspect the code diff, and creates no 4R/Judgment-Day transaction or budget.
 - **Escalation on smell:** if an inline check on a low-risk phase finds any smell (status mismatch, unresolved path, suspected drift, missing artifact), escalate that phase to a fresh-context delegated review before deciding.
@@ -245,6 +250,7 @@ Cache the chain strategy for the session. Pass it as `chain_strategy` to `sdd-ta
 When delivery planning yields chained PRs, treat `chained-pr` (registry skill `gentle-ai-chained-pr`) as a required skill match: resolve it by registry name through this template's existing skill-resolution mechanism (the same one it already uses to pass skills to phases) and ensure the `sdd-tasks` and `sdd-apply` phases load and follow it BEFORE planning or creating any PR. Do not hardcode the skill path; defer resolution to that mechanism.
 
 ### Dependency Graph
+
 ```
 proposal -> specs --> tasks -> apply -> verify -> archive
              ^
@@ -253,6 +259,7 @@ proposal -> specs --> tasks -> apply -> verify -> archive
 ```
 
 ### Result Contract
+
 Each phase returns: `status`, `executive_summary`, `artifacts`, `next_recommended`, `risks`, `skill_resolution`.
 
 ### Review Workload Guard (MANDATORY)
@@ -275,6 +282,7 @@ When launching `sdd-apply`, include the resolved `delivery_strategy`, `chain_str
 You are a COORDINATOR, not an executor. Keep responses short and structured. Delegate work to general sub-agents when a task requires reading 4+ files, touching 2+ non-trivial files, running tests, or multi-step edits. Delegation alone never selects SDD.
 
 Quick delegation rules:
+
 1. Read to decide/verify: up to 3 files inline. If 4+ files -> delegate one narrow mapping worker.
 2. Touching 2+ non-trivial files -> delegate one writer.
 3. Selecting SDD needs an explicit request or an accepted proposal; size or risk alone never selects it.
@@ -291,6 +299,7 @@ Only for a selected SDD route, delegate to these phase agents: sdd-init, sdd-exp
 Result contract (short): each phase returns {status, executive_summary, artifacts, next_recommended}.
 
 Model hints:
+
 - If your assigned model tier is `small`, load only up to 3 relevant `SKILL.md` paths and prefer numbered step instructions instead of long paragraphs.
 
 Artifact store: default `engram` when available.
@@ -304,7 +313,7 @@ When delegating to sub-agents, pass `## Skills to load before work` followed by 
 Read this table at session start (or before first SDD/Judgment-Day delegation), cache it for the session, and use the mapped alias only for SDD/Judgment-Day phase agents. If an SDD/Judgment-Day phase is missing, use the `default` fallback row. If you lack access to the assigned model, substitute `sonnet` and continue.
 
 | Phase | Default Model | Reason |
-|-------|---------------|--------|
+| ------- | --------------- | -------- |
 | sdd-explore | sonnet | Reads code, structural - not architectural |
 | sdd-propose | opus | Architectural decisions |
 | sdd-spec | sonnet | Structured writing |
@@ -335,12 +344,14 @@ ALL sub-agent launch prompts that involve reading, writing, or reviewing code MU
 The orchestrator resolves skills from the registry ONCE (at session start or first delegation), caches the skill index, and passes matching `SKILL.md` paths into each sub-agent's prompt. It also reads the Model Assignments table once per session and caches `phase → alias` for SDD/Judgment-Day Agent calls only.
 
 Orchestrator skill resolution (do once per session):
+
 1. `mem_search(query: "skill-registry", project: "{project}")` → `mem_get_observation(id)` for full registry content
 2. Fallback: read `.atl/skill-registry.md` if engram not available
 3. Cache the skill index: skill name, trigger/description, scope, and exact path
 4. If no registry exists, warn user and proceed without project-specific standards
 
 For each sub-agent launch:
+
 1. Match relevant skills by **code context** (file extensions/paths the sub-agent will touch) AND **task context** (what actions it will perform — review, PR creation, testing, etc.)
 2. Copy matching `SKILL.md` paths into the sub-agent prompt as `## Skills to load before work`
 3. Instruct the sub-agent to read those exact files BEFORE task-specific work
@@ -350,6 +361,7 @@ For each sub-agent launch:
 ### Skill Resolution Feedback
 
 After every delegation that returns a result, check the `skill_resolution` field:
+
 - `paths-injected` → all good, exact skill paths were passed and loaded
 - `fallback-registry`, `fallback-path`, or `none` → skill cache was lost (likely compaction). Re-read the registry immediately and pass skill paths in all subsequent delegations.
 
@@ -371,7 +383,7 @@ Sub-agents get a fresh context with NO memory. The orchestrator controls context
 Each phase has explicit read/write rules:
 
 | Phase | Reads | Writes |
-|-------|-------|--------|
+| ------- | ------- | -------- |
 | `sdd-explore` | nothing | `explore` |
 | `sdd-propose` | exploration (optional) | `proposal` |
 | `sdd-spec` | proposal (required) | `spec` |
@@ -412,7 +424,7 @@ This prevents progress loss across batches. The sub-agent is responsible for rea
 #### Engram Topic Key Format
 
 | Artifact | Topic Key |
-|----------|-----------|
+| ---------- | ----------- |
 | Project context | `sdd-init/{project}` |
 | Exploration | `sdd/{change-name}/explore` |
 | Proposal | `sdd/{change-name}/proposal` |
@@ -425,6 +437,7 @@ This prevents progress loss across batches. The sub-agent is responsible for rea
 | DAG state | `sdd/{change-name}/state` |
 
 Sub-agents retrieve full content via two steps:
+
 1. `mem_search(query: "{topic_key}", project: "{project}")` → get observation ID
 2. `mem_get_observation(id: {id})` → full content (REQUIRED — search results are truncated)
 

@@ -7,9 +7,11 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 
 	"github.com/gentleman-programming/gentle-ai/v2/internal/agents"
+	"github.com/gentleman-programming/gentle-ai/v2/internal/agents/antigravity"
 	"github.com/gentleman-programming/gentle-ai/v2/internal/agents/claude"
 	"github.com/gentleman-programming/gentle-ai/v2/internal/agents/codex"
 	"github.com/gentleman-programming/gentle-ai/v2/internal/components/filemerge"
@@ -234,6 +236,12 @@ const antigravityEngramPluginJSON = `{
 const antigravityEngramToolsMessage = "CRITICAL FIRST ACTION — Ensure these Engram MCP tools are available before responding: mem_save, mem_search, mem_context, mem_session_summary, mem_session_start, mem_session_end, mem_get_observation, mem_suggest_topic_key, mem_capture_passive, mem_save_prompt, mem_update, mem_current_project, mem_judge. When available, also load/select optional mem_review for memory lifecycle review; if mem_review is unavailable, continue with the required tools above. If Antigravity defers MCP tools, load/select these tools from the engram MCP server first. Then call mem_context when the user asks about prior work or the session needs project memory."
 
 func antigravityEngramHooksJSON() []byte {
+	hookScript := `node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{let j=JSON.parse(d);if(j.invocationNum>1){console.log("{}");process.exit(0);}}catch(e){}console.log(JSON.stringify({injectSteps:[{ephemeralMessage:` + mustJSONString(antigravityEngramToolsMessage) + `}]}));});' || printf '%s\n' '` + mustJSONString(map[string]any{
+		"injectSteps": []any{
+			map[string]any{"ephemeralMessage": antigravityEngramToolsMessage},
+		},
+	}) + `'`
+
 	cfg := map[string]any{
 		"gentle-ai-engram-tools": map[string]any{
 			"PreInvocation": []any{
@@ -242,12 +250,8 @@ func antigravityEngramHooksJSON() []byte {
 					"command": `gentle-ai skill-registry refresh --quiet --no-gitignore --cwd "$PWD" || true`,
 				},
 				map[string]any{
-					"type": "command",
-					"command": "printf '%s\\n' '" + mustJSONString(map[string]any{
-						"injectSteps": []any{
-							map[string]any{"ephemeralMessage": antigravityEngramToolsMessage},
-						},
-					}) + "'",
+					"type":    "command",
+					"command": hookScript,
 				},
 			},
 		},
@@ -273,42 +277,53 @@ func ensureJSONFileIfMissing(path string) (filemerge.WriteResult, error) {
 	return filemerge.WriteFileAtomic(path, []byte("{}\n"), 0o644)
 }
 
-func antigravityActiveConfigDir(homeDir string) string {
-	desktop := filepath.Join(homeDir, ".gemini", "antigravity-desktop")
-	if info, err := os.Stat(desktop); err == nil && info.IsDir() {
-		return desktop
+func antigravityActiveConfigDirs(homeDir string) []string {
+	dirs := []string{antigravity.NewAdapter().GlobalConfigDir(homeDir)}
+	for _, candidate := range []string{
+		filepath.Join(homeDir, ".gemini", "antigravity-cli"),
+		filepath.Join(homeDir, ".gemini", "antigravity-desktop"),
+		filepath.Join(homeDir, ".gemini", "antigravity"),
+		filepath.Join(homeDir, ".gemini", "config"),
+	} {
+		if info, err := os.Stat(candidate); err == nil && info.IsDir() && !slices.Contains(dirs, candidate) {
+			dirs = append(dirs, candidate)
+		}
 	}
-	return filepath.Join(homeDir, ".gemini", "antigravity-cli")
+	return dirs
 }
 
 func installAntigravityEngramPlugin(homeDir, engramCommand string) (bool, []string, error) {
-	pluginDir := filepath.Join(antigravityActiveConfigDir(homeDir), "plugins", "gentle-ai-engram")
-	files := make([]string, 0, 3)
+	configDirs := antigravityActiveConfigDirs(homeDir)
+	files := make([]string, 0, len(configDirs)*3)
 	changed := false
 
-	pluginPath := filepath.Join(pluginDir, "plugin.json")
-	pluginWrite, err := filemerge.WriteFileAtomic(pluginPath, []byte(antigravityEngramPluginJSON), 0o644)
-	if err != nil {
-		return false, nil, fmt.Errorf("write Antigravity Engram plugin manifest: %w", err)
-	}
-	changed = changed || pluginWrite.Changed
-	files = append(files, pluginPath)
+	for _, cfgDir := range configDirs {
+		pluginDir := filepath.Join(cfgDir, "plugins", "gentle-ai-engram")
 
-	pluginMCPPath := filepath.Join(pluginDir, "mcp_config.json")
-	mcpWrite, err := filemerge.WriteFileAtomic(pluginMCPPath, engramOverlayJSON(model.AgentAntigravity, engramCommand), 0o644)
-	if err != nil {
-		return false, nil, fmt.Errorf("write Antigravity Engram plugin MCP config: %w", err)
-	}
-	changed = changed || mcpWrite.Changed
-	files = append(files, pluginMCPPath)
+		pluginPath := filepath.Join(pluginDir, "plugin.json")
+		pluginWrite, err := filemerge.WriteFileAtomic(pluginPath, []byte(antigravityEngramPluginJSON), 0o644)
+		if err != nil {
+			return false, nil, fmt.Errorf("write Antigravity Engram plugin manifest (%s): %w", cfgDir, err)
+		}
+		changed = changed || pluginWrite.Changed
+		files = append(files, pluginPath)
 
-	hooksPath := filepath.Join(pluginDir, "hooks.json")
-	hooksWrite, err := filemerge.WriteFileAtomic(hooksPath, antigravityEngramHooksJSON(), 0o644)
-	if err != nil {
-		return false, nil, fmt.Errorf("write Antigravity Engram hooks: %w", err)
+		pluginMCPPath := filepath.Join(pluginDir, "mcp_config.json")
+		mcpWrite, err := filemerge.WriteFileAtomic(pluginMCPPath, engramOverlayJSON(model.AgentAntigravity, engramCommand), 0o644)
+		if err != nil {
+			return false, nil, fmt.Errorf("write Antigravity Engram plugin MCP config (%s): %w", cfgDir, err)
+		}
+		changed = changed || mcpWrite.Changed
+		files = append(files, pluginMCPPath)
+
+		hooksPath := filepath.Join(pluginDir, "hooks.json")
+		hooksWrite, err := filemerge.WriteFileAtomic(hooksPath, antigravityEngramHooksJSON(), 0o644)
+		if err != nil {
+			return false, nil, fmt.Errorf("write Antigravity Engram hooks (%s): %w", cfgDir, err)
+		}
+		changed = changed || hooksWrite.Changed
+		files = append(files, hooksPath)
 	}
-	changed = changed || hooksWrite.Changed
-	files = append(files, hooksPath)
 
 	return changed, files, nil
 }

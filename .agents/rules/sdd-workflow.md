@@ -6,7 +6,7 @@ This workspace enforces strict adherence to the Software Design & Development (S
 - **NEVER** apply code changes or write to files without explicit user confirmation first.
 - The orchestrator must present the proposed implementation plan, architecture, or task list and pause, waiting for the user to approve before delegating to `sdd-apply`. **This is a hard pause gate**: you **MUST NOT** call `define_subagent` or `invoke_subagent` for `sdd-apply` in the same turn that you ask for approval; you **MUST** end your turn and wait for the user's explicit response in the chat confirming they want to proceed.
 - The orchestrator must detail proposals, specs, tasks, and reports directly in the chat/conversation, and not just reference the created `.md` artifacts.
-- The orchestrator must block and wait synchronously for the completion of ALL dynamic subagents (including planning, apply, verification, and review/judging subagents) before proceeding to any subsequent step or responding to the user.
+- The orchestrator must yield execution and rely on reactive wakeup for the completion of ALL dynamic subagents (including planning, apply, verification, and review/judging subagents) without active polling before proceeding to subsequent steps or responding to the user.
 - The orchestrator and any interactive tools must present all questions, prompts, and options to the user in the conversation's active language (matching the user's current language) rather than English.
 
 ## 2. Mandatory SDD Phase Boundaries

@@ -3,6 +3,8 @@ package agentbuilder
 import (
 	"strings"
 	"testing"
+
+	"github.com/gentleman-programming/gentle-ai/v2/internal/assets"
 )
 
 // validSKILL is a complete, parseable SKILL.md fixture.
@@ -46,6 +48,49 @@ func TestParse_ValidFullSKILL(t *testing.T) {
 	}
 	if agent.Content == "" {
 		t.Errorf("Content should not be empty")
+	}
+}
+
+func TestParse_SDDSkills(t *testing.T) {
+	sddPhases := []string{
+		"sdd-init",
+		"sdd-propose",
+		"sdd-spec",
+		"sdd-design",
+		"sdd-tasks",
+		"sdd-apply",
+		"sdd-verify",
+		"sdd-archive",
+		"sdd-onboard",
+		"sdd-explore",
+	}
+
+	for _, phase := range sddPhases {
+		t.Run(phase, func(t *testing.T) {
+			path := "skills/" + phase + "/SKILL.md"
+			content, err := assets.Read(path)
+			if err != nil {
+				t.Fatalf("assets.Read(%q) error = %v", path, err)
+			}
+
+			agent, err := Parse(content)
+			if err != nil {
+				t.Fatalf("Parse(%q) failed: %v", path, err)
+			}
+
+			if agent.Title == "" {
+				t.Errorf("Parse(%q) returned empty Title", path)
+			}
+			if agent.Name == "" {
+				t.Errorf("Parse(%q) returned empty Name", path)
+			}
+			if agent.Description == "" {
+				t.Errorf("Parse(%q) returned empty Description", path)
+			}
+			if agent.Trigger == "" {
+				t.Errorf("Parse(%q) returned empty Trigger", path)
+			}
+		})
 	}
 }
 

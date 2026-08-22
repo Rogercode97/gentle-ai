@@ -645,13 +645,11 @@ func Inject(homeDir string, adapter agents.Adapter, sddMode model.SDDModeID, opt
 	}
 
 	// 3c. Write native sub-agent files for adapters that support them. Sub-agent files are
-	// written to the user's home directory (e.g. ~/.cursor/agents/), not to the
-	// workspace, so no project-root detection is needed here.
-	var agentsDir string
+	// written exclusively to the user's global config directory (e.g. ~/.gemini/config/agents/).
 	if adapter.SupportsSubAgents() {
-		agentsDir = adapter.SubAgentsDir(homeDir)
-		if err := os.MkdirAll(agentsDir, 0o755); err != nil {
-			return InjectionResult{}, fmt.Errorf("create agents dir: %w", err)
+		targetDirs := make([]string, 0, 1)
+		if mainDir := adapter.SubAgentsDir(homeDir); mainDir != "" {
+			targetDirs = append(targetDirs, mainDir)
 		}
 
 		embeddedDir := adapter.EmbeddedSubAgentsDir()
@@ -660,78 +658,84 @@ func Inject(homeDir string, adapter agents.Adapter, sddMode model.SDDModeID, opt
 			return InjectionResult{}, fmt.Errorf("read embedded agents dir: %w", err)
 		}
 
-		for _, entry := range entries {
-			if entry.IsDir() {
-				continue
-			}
-			// Copy all files (not just .md) to support Kimi's YAML-based agents
-			contentStr := renderBoundedReviewAsset(adapter.Agent(), embeddedDir+"/"+entry.Name())
-
-			if adapter.Agent() == model.AgentAntigravity {
-				contentStr = strings.ReplaceAll(contentStr, "{{KIRO_MODEL}}", "auto")
-				contentStr = strings.ReplaceAll(contentStr, "~/.kiro/skills", "~/.gemini/antigravity-cli/skills")
-				contentStr = strings.ReplaceAll(contentStr, "%USERPROFILE%\\.kiro\\skills", "%USERPROFILE%\\.gemini\\antigravity-cli\\skills")
+		for _, targetDir := range targetDirs {
+			if err := os.MkdirAll(targetDir, 0o755); err != nil {
+				return InjectionResult{}, fmt.Errorf("create agents dir: %w", err)
 			}
 
-			// Resolve {{KIRO_MODEL}} placeholder for adapters that support it (e.g. Kiro).
-			// Non-Kiro adapters (Cursor, etc.) don't implement kiroModelResolver and are unaffected.
-			if kmr, ok := adapter.(kiroModelResolver); ok {
-				phase := strings.TrimSuffix(entry.Name(), ".md")
-				alias := model.KiroModelAuto // safe default
-				if opts.KiroModelAssignments != nil {
-					if a, hasAlias := opts.KiroModelAssignments[phase]; hasAlias {
-						alias = a
-					} else if d, hasDefault := opts.KiroModelAssignments["default"]; hasDefault {
-						alias = d
-					}
-				} else if opts.ClaudeModelAssignments != nil {
-					// Backward-compatible fallback when Kiro-specific assignments are not provided.
-					if a, hasAlias := opts.ClaudeModelAssignments[phase]; hasAlias {
-						alias = model.KiroModelAlias(a)
-					} else if d, hasDefault := opts.ClaudeModelAssignments["default"]; hasDefault {
-						alias = model.KiroModelAlias(d)
-					}
+			for _, entry := range entries {
+				if entry.IsDir() {
+					continue
 				}
-				contentStr = strings.ReplaceAll(contentStr, "{{KIRO_MODEL}}", kmr.KiroModelID(alias))
-			}
+				// Copy all files (not just .md) to support Kimi's YAML-based agents
+				contentStr := renderBoundedReviewAsset(adapter.Agent(), embeddedDir+"/"+entry.Name())
 
-			// Resolve {{CLAUDE_MODEL}} placeholder for adapters that support it (e.g. Claude Code).
-			// Non-Claude adapters don't implement claudeModelResolver and are unaffected.
-			if cmr, ok := adapter.(claudeModelResolver); ok {
-				phase := strings.TrimSuffix(entry.Name(), ".md")
-				assignment := resolveClaudePhaseAssignment(opts.ClaudeModelAssignments, opts.ClaudePhaseAssignments, phase)
-				contentStr = strings.ReplaceAll(contentStr, "{{CLAUDE_MODEL}}", cmr.ClaudeModelID(assignment.Model))
-				contentStr = injectClaudeEffortFrontmatter(contentStr, assignment)
-			}
+				if adapter.Agent() == model.AgentAntigravity {
+					contentStr = strings.ReplaceAll(contentStr, "{{KIRO_MODEL}}", "auto")
+					contentStr = strings.ReplaceAll(contentStr, "~/.kiro/skills", "~/.gemini/antigravity-cli/skills")
+					contentStr = strings.ReplaceAll(contentStr, "%USERPROFILE%\\.kiro\\skills", "%USERPROFILE%\\.gemini\\antigravity-cli\\skills")
+				}
 
-			if isMarkdownSubAgentPromptFile(entry.Name()) {
-				contentStr = injectCodeGraphToolGrantIntoPrompt(contentStr, adapter.Agent(), opts.CodeGraphGuidanceMarkdown)
-				contentStr = injectCodeGraphGuidanceIntoPrompt(contentStr, opts.CodeGraphGuidanceMarkdown)
-				contentStr = injectLanguageContractIntoPrompt(contentStr)
-			}
-			outPath := filepath.Join(agentsDir, entry.Name())
-			writeResult, err := filemerge.WriteFileAtomic(outPath, []byte(contentStr), 0o644)
-			if err != nil {
-				return InjectionResult{}, fmt.Errorf("write agent %s: %w", entry.Name(), err)
-			}
-			changed = changed || writeResult.Changed
-			if writeResult.Changed {
-				files = append(files, outPath)
-			}
-		}
+				// Resolve {{KIRO_MODEL}} placeholder for adapters that support it (e.g. Kiro).
+				// Non-Kiro adapters (Cursor, etc.) don't implement kiroModelResolver and are unaffected.
+				if kmr, ok := adapter.(kiroModelResolver); ok {
+					phase := strings.TrimSuffix(entry.Name(), ".md")
+					alias := model.KiroModelAuto // safe default
+					if opts.KiroModelAssignments != nil {
+						if a, hasAlias := opts.KiroModelAssignments[phase]; hasAlias {
+							alias = a
+						} else if d, hasDefault := opts.KiroModelAssignments["default"]; hasDefault {
+							alias = d
+						}
+					} else if opts.ClaudeModelAssignments != nil {
+						// Backward-compatible fallback when Kiro-specific assignments are not provided.
+						if a, hasAlias := opts.ClaudeModelAssignments[phase]; hasAlias {
+							alias = model.KiroModelAlias(a)
+						} else if d, hasDefault := opts.ClaudeModelAssignments["default"]; hasDefault {
+							alias = model.KiroModelAlias(d)
+						}
+					}
+					contentStr = strings.ReplaceAll(contentStr, "{{KIRO_MODEL}}", kmr.KiroModelID(alias))
+				}
 
-		// Post-check: verify critical agent files exist (either .md or .yaml)
-		for _, phase := range []string{"sdd-apply", "sdd-verify"} {
-			found := false
-			for _, ext := range []string{".md", ".yaml"} {
-				checkPath := filepath.Join(agentsDir, phase+ext)
-				if info, err := os.Stat(checkPath); err == nil && info.Size() >= 10 {
-					found = true
-					break
+				// Resolve {{CLAUDE_MODEL}} placeholder for adapters that support it (e.g. Claude Code).
+				// Non-Claude adapters don't implement claudeModelResolver and are unaffected.
+				if cmr, ok := adapter.(claudeModelResolver); ok {
+					phase := strings.TrimSuffix(entry.Name(), ".md")
+					assignment := resolveClaudePhaseAssignment(opts.ClaudeModelAssignments, opts.ClaudePhaseAssignments, phase)
+					contentStr = strings.ReplaceAll(contentStr, "{{CLAUDE_MODEL}}", cmr.ClaudeModelID(assignment.Model))
+					contentStr = injectClaudeEffortFrontmatter(contentStr, assignment)
+				}
+
+				if isMarkdownSubAgentPromptFile(entry.Name()) {
+					contentStr = injectCodeGraphToolGrantIntoPrompt(contentStr, adapter.Agent(), opts.CodeGraphGuidanceMarkdown)
+					contentStr = injectCodeGraphGuidanceIntoPrompt(contentStr, opts.CodeGraphGuidanceMarkdown)
+					contentStr = injectLanguageContractIntoPrompt(contentStr)
+				}
+				outPath := filepath.Join(targetDir, entry.Name())
+				writeResult, err := filemerge.WriteFileAtomic(outPath, []byte(contentStr), 0o644)
+				if err != nil {
+					return InjectionResult{}, fmt.Errorf("write agent %s: %w", entry.Name(), err)
+				}
+				changed = changed || writeResult.Changed
+				if writeResult.Changed {
+					files = append(files, outPath)
 				}
 			}
-			if !found {
-				return InjectionResult{}, fmt.Errorf("post-check: sub-agent %q not written correctly (missing or truncated)", phase)
+
+			// Post-check: verify critical agent files exist (either .md or .yaml)
+			for _, phase := range []string{"sdd-apply", "sdd-verify"} {
+				found := false
+				for _, ext := range []string{".md", ".yaml"} {
+					checkPath := filepath.Join(targetDir, phase+ext)
+					if info, err := os.Stat(checkPath); err == nil && info.Size() >= 10 {
+						found = true
+						break
+					}
+				}
+				if !found {
+					return InjectionResult{}, fmt.Errorf("post-check: sub-agent %q not written correctly (missing or truncated)", phase)
+				}
 			}
 		}
 	}
@@ -1186,14 +1190,12 @@ func removeLegacyOpenCodePlainChatPreflightLines(prompt string) string {
 }
 
 // nativeReviewAuthorityRule is rule 7 of the managed delegation block. It
-// replaces a rule that pointed at retired work-routing contracts: those commands
-// no longer exist, so a prompt naming them sends the orchestrator after dead
-// authority. What survives is the local review receipt plus the native review
-// status/validate surface, and the ownership boundary the old rule protected --
-// the orchestrator still never selects lenses or authors PASS itself.
-const nativeReviewAuthorityRule = "7. **Authority rule**: read native review state with `gentle-ai review status`" +
-	" and let `gentle-ai review validate --gate <gate>` check the exact owner-issued receipt at every lifecycle gate." +
-	" Never select lenses, synthesize transitions, or infer PASS from prose."
+// replaces a rule that pointed at retired work-routing contracts. The current
+// lifecycle starts only from current-worktree preflight, retains the explicit
+// transaction binding, and leaves delivery to the user rather than a gate.
+const nativeReviewAuthorityRule = "7. **Authority rule**: use selectorless `gentle-ai review status` only to preflight the current worktree" +
+	" and execute its exact START; retain that transaction's lineage, revision, and target for every later lifecycle call." +
+	" Gates are informational only. Never select lenses, synthesize transitions, infer PASS, or authorize delivery from prose."
 
 func ensurePreservedOpenCodeDelegationHardGates(prompt string) string {
 	prompt = removeRetiredWorkRoutingAuthorityRule(prompt)
@@ -1204,15 +1206,15 @@ func ensurePreservedOpenCodeDelegationHardGates(prompt string) string {
 	// plain-text policy beneath it.
 	prompt = strings.NewReplacer(
 		"run a fresh-context review unless the diff is trivial docs/text",
-		"validate the exact owner-issued receipt; never launch prompt-owned review at the gate",
+		nativeReviewAuthorityRule,
 		"stop and run a fresh audit before continuing",
 		"stop with one typed Needs your decision result until native authority validates the immutable candidate",
 		"use fresh context for adversarial review of diffs, conflicts, PR readiness, and incidents",
-		"let native RAR schedule adversarial review; PR readiness and incidents validate the same receipt",
+		nativeReviewAuthorityRule,
 		"run the concrete review lens(es) selected by Review Lens Selection unless the diff is trivial docs/text",
-		"validate the exact owner-issued receipt; never launch prompt-owned review at the gate",
+		nativeReviewAuthorityRule,
 		"run the concrete review lens(es) selected by Review Lens Selection unless the diff is trivial (tier 1)",
-		"validate the exact owner-issued receipt; never launch prompt-owned review at the gate",
+		nativeReviewAuthorityRule,
 	).Replace(prompt)
 
 	delegation := `

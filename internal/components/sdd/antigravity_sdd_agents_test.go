@@ -2,12 +2,16 @@ package sdd
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/gentleman-programming/gentle-ai/v2/internal/agents"
+	"github.com/gentleman-programming/gentle-ai/v2/internal/assets"
 	"github.com/gentleman-programming/gentle-ai/v2/internal/model"
 )
 
@@ -57,6 +61,9 @@ func TestAntigravitySddAgentsPluginWritesManifestAndHooks(t *testing.T) {
 	for _, want := range []string{
 		`"gentle-ai-sdd-agents-hardening"`,
 		`"PreInvocation"`,
+		`"PreToolUse"`,
+		`"matcher": "run_command"`,
+		"Destructive command blocked by Gentle AI SDD guard",
 		"printf",
 		"sdd-explore",
 		"sdd-apply",
@@ -78,7 +85,7 @@ func TestAntigravitySddAgentsPluginMergesIntoExistingHooks(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Pre-existing custom hook must be preserved after install.
-	preExisting := `{"custom-hook":{"PreInvocation":[{"type":"command","command":"echo custom"}]}}`
+	preExisting := `{"custom-hook":{"PreInvocation":[{"type":"command","command":"echo custom"}],"PreToolUse":[{"matcher":"custom_tool","hooks":[{"type":"command","command":"echo tool"}]}]}}`
 	if err := os.WriteFile(hooksPath, []byte(preExisting), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -95,7 +102,17 @@ func TestAntigravitySddAgentsPluginMergesIntoExistingHooks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadFile(hooks.json) error = %v", err)
 	}
-	for _, want := range []string{`"custom-hook"`, "echo custom", `"gentle-ai-sdd-agents-hardening"`, "sdd-explore"} {
+	for _, want := range []string{
+		`"custom-hook"`,
+		"echo custom",
+		"custom_tool",
+		"echo tool",
+		`"gentle-ai-sdd-agents-hardening"`,
+		`"PreInvocation"`,
+		`"PreToolUse"`,
+		"sdd-explore",
+		"run_command",
+	} {
 		if !strings.Contains(string(merged), want) {
 			t.Fatalf("merged hooks.json missing %q:\n%s", want, merged)
 		}
@@ -136,9 +153,45 @@ func TestAntigravitySddAgentsHardeningContractPhrases(t *testing.T) {
 			t.Errorf("hardening message missing required TDD phrase %q", want)
 		}
 	}
+	// Assert Engram dual-path persistence contract phrases specifically
+	for _, want := range []string{
+		"enable_mcp_tools: true",
+		"fallback persistence",
+		"call_mcp_tool",
+		`ServerName="engram"`,
+		`ToolName="mem_save"`,
+		"direct MCP access",
+	} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("hardening message missing required Engram persistence phrase %q", want)
+		}
+	}
 	for _, forbidden := range antigravitySddAgentsHardeningContractForbids {
 		if strings.Contains(msg, forbidden) {
 			t.Errorf("hardening message must not contain %q (it would fake a real Antigravity API)", forbidden)
+		}
+	}
+}
+
+func TestAntigravityOrchestratorAssetContainsEngramPersistenceContract(t *testing.T) {
+	content, err := assets.FS.ReadFile("antigravity/sdd-orchestrator.md")
+	if err != nil {
+		t.Fatalf("ReadFile(antigravity/sdd-orchestrator.md) error = %v", err)
+	}
+	text := string(content)
+	for _, want := range []string{
+		"enable_mcp_tools: true",
+		"mem_save",
+		"sdd/{change-name}/{artifact-type}",
+		"fallback persistence",
+		"call_mcp_tool",
+		`ServerName="engram"`,
+		`ToolName="mem_save"`,
+		"direct MCP access",
+		"enable_write_tools",
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("sdd-orchestrator.md missing required engram persistence directive %q", want)
 		}
 	}
 }
@@ -325,6 +378,14 @@ func TestInjectAntigravityInstallsSddAgentsHardeningPlugin(t *testing.T) {
 	pre, ok := block["PreInvocation"].([]any)
 	if !ok || len(pre) == 0 {
 		t.Fatalf("hooks.json missing PreInvocation list: %s", hooksBody)
+	}
+	preTool, ok := block["PreToolUse"].([]any)
+	if !ok || len(preTool) == 0 {
+		t.Fatalf("hooks.json missing PreToolUse list: %s", hooksBody)
+	}
+	entry, ok := preTool[0].(map[string]any)
+	if !ok || entry["matcher"] != "run_command" {
+		t.Fatalf("hooks.json PreToolUse[0] missing matcher 'run_command': %s", hooksBody)
 	}
 }
 
@@ -841,4 +902,248 @@ func TestAntigravitySddAgentsDynamicRolesAndScopes(t *testing.T) {
 			t.Errorf("role %q is missing from the canonical role-scope validation table", role)
 		}
 	}
+}
+
+func TestAntigravitySddAgentsPreToolUseHookStructure(t *testing.T) {
+	data := antigravitySddAgentsHooksJSON()
+	var parsed map[string]any
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		t.Fatalf("antigravitySddAgentsHooksJSON() is not valid JSON: %v", err)
+	}
+
+	block, ok := parsed["gentle-ai-sdd-agents-hardening"].(map[string]any)
+	if !ok {
+		t.Fatalf("missing gentle-ai-sdd-agents-hardening block: %v", parsed)
+	}
+
+	preToolUse, ok := block["PreToolUse"].([]any)
+	if !ok || len(preToolUse) == 0 {
+		t.Fatalf("missing or empty PreToolUse: %v", block)
+	}
+
+	entry, ok := preToolUse[0].(map[string]any)
+	if !ok {
+		t.Fatalf("PreToolUse[0] is not an object: %T", preToolUse[0])
+	}
+
+	matcher, ok := entry["matcher"].(string)
+	if !ok || matcher != "run_command" {
+		t.Fatalf("PreToolUse[0].matcher = %q, want %q", matcher, "run_command")
+	}
+
+	hooksList, ok := entry["hooks"].([]any)
+	if !ok || len(hooksList) == 0 {
+		t.Fatalf("PreToolUse[0].hooks is missing or empty: %v", entry)
+	}
+
+	hookObj, ok := hooksList[0].(map[string]any)
+	if !ok {
+		t.Fatalf("hooks[0] is not an object: %T", hooksList[0])
+	}
+
+	hookType, ok := hookObj["type"].(string)
+	if !ok || hookType != "command" {
+		t.Errorf("hook type = %q, want %q", hookType, "command")
+	}
+
+	cmd, ok := hookObj["command"].(string)
+	if !ok || cmd == "" {
+		t.Fatalf("hook command is missing or empty")
+	}
+
+	for _, phrase := range []string{
+		"node -e",
+		"Destructive command blocked by Gentle AI SDD guard",
+		`"decision":"deny"`,
+		`"decision":"allow"`,
+		"--force",
+		"-f",
+		"--hard",
+		"rm",
+		"printf",
+	} {
+		if !strings.Contains(cmd, phrase) {
+			t.Errorf("PreToolUse command missing expected phrase %q:\n%s", phrase, cmd)
+		}
+	}
+}
+
+func TestAntigravityActiveConfigDirs_Discovery(t *testing.T) {
+	home := t.TempDir()
+
+	// 1. None exist -> falls back to default
+	dirs := antigravityActiveConfigDirs(home)
+	if len(dirs) != 1 {
+		t.Fatalf("expected 1 fallback dir when none exist, got %d: %v", len(dirs), dirs)
+	}
+
+	// 2. Create all 4 directories
+	candidates := []string{
+		filepath.Join(home, ".gemini", "config"),
+		filepath.Join(home, ".gemini", "antigravity-cli"),
+		filepath.Join(home, ".gemini", "antigravity-desktop"),
+		filepath.Join(home, ".gemini", "antigravity"),
+	}
+	for _, c := range candidates {
+		if err := os.MkdirAll(c, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	discovered := antigravityActiveConfigDirs(home)
+	if len(discovered) != 4 {
+		t.Fatalf("expected all 4 config dirs discovered, got %d: %v", len(discovered), discovered)
+	}
+	for _, c := range candidates {
+		if !slices.Contains(discovered, c) {
+			t.Errorf("discovered missing %q; got %v", c, discovered)
+		}
+	}
+}
+
+func TestAntigravitySddAgentsPreToolUseExecution(t *testing.T) {
+	hooksData := antigravitySddAgentsHooksJSON()
+	var root map[string]any
+	if err := json.Unmarshal(hooksData, &root); err != nil {
+		t.Fatalf("unmarshal hooks json: %v", err)
+	}
+	block, ok := root["gentle-ai-sdd-agents-hardening"].(map[string]any)
+	if !ok {
+		t.Fatalf("missing gentle-ai-sdd-agents-hardening: %v", root)
+	}
+	preToolUse, ok := block["PreToolUse"].([]any)
+	if !ok || len(preToolUse) == 0 {
+		t.Fatalf("missing PreToolUse: %v", block)
+	}
+	entry, ok := preToolUse[0].(map[string]any)
+	if !ok {
+		t.Fatalf("PreToolUse[0] is not a map: %v", preToolUse[0])
+	}
+	hooksList, ok := entry["hooks"].([]any)
+	if !ok || len(hooksList) == 0 {
+		t.Fatalf("missing hooks in PreToolUse[0]: %v", entry)
+	}
+	hookObj, ok := hooksList[0].(map[string]any)
+	if !ok {
+		t.Fatalf("hooks[0] is not a map: %v", hooksList[0])
+	}
+	fullCmd, ok := hookObj["command"].(string)
+	if !ok || fullCmd == "" {
+		t.Fatalf("hook command is empty: %v", hookObj)
+	}
+
+	parts := strings.SplitN(fullCmd, " || ", 2)
+	if len(parts) != 2 {
+		t.Fatalf("expected command to contain ' || ' separating node and shell fallback; got: %q", fullCmd)
+	}
+	nodeScript := parts[0]
+	shellFallback := parts[1]
+
+	cases := []struct {
+		name     string
+		command  string
+		wantDeny bool
+	}{
+		// Positive destructive commands
+		{"rm -rf", "rm -rf dir", true},
+		{"rm -rfv", "rm -rfv dir", true},
+		{"rm -fr", "rm -fr dir", true},
+		{"rm -r -f", "rm -r -f dir", true},
+		{"git reset --hard", "git reset --hard HEAD~1", true},
+		{"git push -f", "git push -f origin main", true},
+		{"git push --force", "git push --force origin main", true},
+
+		// Negative non-destructive commands
+		{"git status", "git status", false},
+		{"rm file.txt", "rm file.txt", false},
+		{"npm test", "npm test", false},
+		{"git push origin main", "git push origin main", false},
+	}
+
+	makePayloads := func(cmd string) []struct {
+		keyName string
+		jsonStr string
+	}{
+		return []struct {
+			keyName string
+			jsonStr string
+		}{
+			{"CommandLine", fmt.Sprintf(`{"toolCall":{"args":{"CommandLine":%q}}}`, cmd)},
+			{"commandLine", fmt.Sprintf(`{"toolCall":{"args":{"commandLine":%q}}}`, cmd)},
+			{"command", fmt.Sprintf(`{"args":{"command":%q}}`, cmd)},
+			{"cmd", fmt.Sprintf(`{"args":{"cmd":%q}}`, cmd)},
+			{"direct_cmd", fmt.Sprintf(`{"cmd":%q}`, cmd)},
+			{"direct_CommandLine", fmt.Sprintf(`{"CommandLine":%q}`, cmd)},
+		}
+	}
+
+	hasNode := true
+	if _, err := exec.LookPath("node"); err != nil {
+		hasNode = false
+		t.Log("node binary not found in PATH; skipping live node execution")
+	}
+
+	if hasNode {
+		t.Run("node_script", func(t *testing.T) {
+			for _, tc := range cases {
+				for _, p := range makePayloads(tc.command) {
+					testName := fmt.Sprintf("%s/%s", tc.name, p.keyName)
+					t.Run(testName, func(t *testing.T) {
+						cmd := exec.Command("sh", "-c", nodeScript)
+						cmd.Stdin = strings.NewReader(p.jsonStr)
+						out, err := cmd.CombinedOutput()
+						if err != nil {
+							t.Fatalf("node script failed with err %v, output: %s", err, string(out))
+						}
+						outStr := strings.TrimSpace(string(out))
+						var resp map[string]any
+						if err := json.Unmarshal([]byte(outStr), &resp); err != nil {
+							t.Fatalf("failed to parse output %q as JSON: %v", outStr, err)
+						}
+						decision, _ := resp["decision"].(string)
+						if tc.wantDeny {
+							if decision != "deny" {
+								t.Errorf("expected decision 'deny' for %q, got %q (output: %s)", tc.command, decision, outStr)
+							}
+						} else {
+							if decision != "allow" {
+								t.Errorf("expected decision 'allow' for %q, got %q (output: %s)", tc.command, decision, outStr)
+							}
+						}
+					})
+				}
+			}
+		})
+	}
+
+	t.Run("shell_fallback", func(t *testing.T) {
+		for _, tc := range cases {
+			for _, p := range makePayloads(tc.command) {
+				testName := fmt.Sprintf("%s/%s", tc.name, p.keyName)
+				t.Run(testName, func(t *testing.T) {
+					cmd := exec.Command("sh", "-c", shellFallback)
+					cmd.Stdin = strings.NewReader(p.jsonStr)
+					out, err := cmd.CombinedOutput()
+					if err != nil {
+						t.Fatalf("shell fallback failed with err %v, output: %s", err, string(out))
+					}
+					outStr := strings.TrimSpace(string(out))
+					var resp map[string]any
+					if err := json.Unmarshal([]byte(outStr), &resp); err != nil {
+						t.Fatalf("failed to parse output %q as JSON: %v", outStr, err)
+					}
+					decision, _ := resp["decision"].(string)
+					if tc.wantDeny {
+						if decision != "deny" {
+							t.Errorf("expected decision 'deny' for %q, got %q (output: %s)", tc.command, decision, outStr)
+						}
+					} else {
+						if decision != "allow" {
+							t.Errorf("expected decision 'allow' for %q, got %q (output: %s)", tc.command, decision, outStr)
+						}
+					}
+				})
+			}
+		}
+	})
 }

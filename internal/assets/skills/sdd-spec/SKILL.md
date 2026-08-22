@@ -10,7 +10,19 @@ metadata:
   delegate_only: true
 ---
 
-## Execution Role
+# SDD Spec Skill
+
+## Description
+
+Write SDD delta specs with requirements and scenarios in RFC 2119 Given/When/Then format.
+
+## Trigger
+
+Trigger phrases: sdd spec, or when the orchestrator launches spec work for a change.
+
+## Instructions
+
+### Execution Role
 
 Confirm your role before acting. You are the dedicated `sdd-spec` sub-agent unless you loaded this skill directly through the `skill()` tool.
 
@@ -18,7 +30,7 @@ Confirm your role before acting. You are the dedicated `sdd-spec` sub-agent unle
 - If you loaded this skill through the `skill()` tool, you are the orchestrator. Stop here and delegate to the dedicated `sdd-spec` sub-agent using your platform's delegation primitive (for example, `task(...)` or a sub-agent invocation).
 
 
-## Language Domain Contract
+### Language Domain Contract
 
 Generated technical artifacts default to English. Do not inherit the user's conversational language or the active persona's regional voice for SDD artifacts unless the user explicitly requests that artifact language or the project convention requires it.
 
@@ -26,17 +38,17 @@ If technical artifacts are explicitly requested in another language, use a neutr
 
 Public/contextual comments follow the target context language by default. Explicit user language or tone overrides win; otherwise use a neutral/professional register unless the target context clearly calls for another tone or regional variant.
 
-## Purpose
+### Purpose
 
 You are a sub-agent responsible for writing SPECIFICATIONS. You take the proposal and produce delta specs — structured requirements and scenarios that describe what's being ADDED, MODIFIED, REMOVED, or RENAMED from the system's behavior.
 
-## What You Receive
+### What You Receive
 
 From the orchestrator:
 - Change name
 - Artifact store mode (`engram | openspec | hybrid | none`)
 
-## Execution and Persistence Contract
+### Execution and Persistence Contract
 
 > Follow **Section B** (retrieval) and **Section C** (persistence) from `skills/_shared/sdd-phase-common.md`.
 
@@ -45,12 +57,12 @@ From the orchestrator:
 - **hybrid**: Follow BOTH conventions — persist to Engram (single concatenated artifact) AND write domain files to filesystem.
 - **none**: Return result only. Never create or modify project files.
 
-## What to Do
+### What to Do
 
-### Step 1: Load Skills
+#### Step 1: Load Skills
 Follow **Section A** from `skills/_shared/sdd-phase-common.md`.
 
-### Step 2: Identify Affected Domains
+#### Step 2: Identify Affected Domains
 
 Read the proposal's **Capabilities section** — this is your primary contract:
 
@@ -66,7 +78,7 @@ FOR EACH entry under "Modified Capabilities":
 
 If the proposal has no Capabilities section (older format), fall back to inferring from "Affected Areas". But always prefer the explicit Capabilities mapping when present.
 
-### Step 3: Read Existing Specs
+#### Step 3: Read Existing Specs
 
 **IF mode is `openspec` or `hybrid`:** If `openspec/specs/{domain}/spec.md` exists, read it to understand CURRENT behavior. Your delta specs describe CHANGES to this behavior.
 
@@ -74,7 +86,7 @@ If the proposal has no Capabilities section (older format), fall back to inferri
 
 **IF mode is `none`:** Skip — no existing specs to read.
 
-### Step 4: Write Delta Specs
+#### Step 4: Write Delta Specs
 
 **IF mode is `openspec` or `hybrid`:** Create specs inside the change folder:
 
@@ -88,7 +100,7 @@ openspec/changes/{change-name}/
 
 **IF mode is `engram` or `none`:** Do NOT create any `openspec/` directories or files. Compose the spec content in memory — you will persist it in Step 5.
 
-#### MODIFIED Requirements Workflow (CRITICAL — read before writing deltas)
+##### MODIFIED Requirements Workflow (CRITICAL — read before writing deltas)
 
 When writing a `## MODIFIED Requirements` section, follow this exact workflow:
 
@@ -106,7 +118,7 @@ Why copy-full-then-edit?
 → If adding NEW behavior WITHOUT changing existing behavior, use ADDED instead
 ```
 
-#### Delta Spec Format
+##### Delta Spec Format
 
 ```markdown
 # Delta for {Domain}
@@ -166,7 +178,7 @@ The system {MUST/SHALL/SHOULD} {do something specific}.
 (Migration: {how references/tests/docs should update, or "None" if no migration is needed})
 ```
 
-#### For NEW Specs (No Existing Spec)
+##### For NEW Specs (No Existing Spec)
 
 If this is a completely new domain, create a FULL spec (not a delta):
 
@@ -190,7 +202,7 @@ The system {MUST/SHALL/SHOULD} {behavior}.
 - THEN {outcome}
 ```
 
-### Step 5: Persist Artifact
+#### Step 5: Persist Artifact
 
 **This step is MANDATORY — do NOT skip it.**
 
@@ -199,7 +211,7 @@ Follow **Section C** from `skills/_shared/sdd-phase-common.md`.
 - topic_key: `sdd/{change-name}/spec`
 - type: `architecture`
 
-### Step 6: Return Summary
+#### Step 6: Return Summary
 
 Return to the orchestrator:
 
@@ -222,6 +234,16 @@ Return to the orchestrator:
 Ready for design (sdd-design). If design already exists, ready for tasks (sdd-tasks).
 ```
 
+### RFC 2119 Keywords Quick Reference
+
+| Keyword | Meaning |
+|---------|---------|
+| **MUST / SHALL** | Absolute requirement |
+| **MUST NOT / SHALL NOT** | Absolute prohibition |
+| **SHOULD** | Recommended, but exceptions may exist with justification |
+| **SHOULD NOT** | Not recommended, but may be acceptable with justification |
+| **MAY** | Optional |
+
 ## Rules
 
 - ALWAYS use Given/When/Then format for scenarios
@@ -241,12 +263,3 @@ Ready for design (sdd-design). If design already exists, ready for tasks (sdd-ta
 - **Size budget**: Spec artifact MUST be under 650 words. Prefer requirement tables over narrative descriptions. Each scenario: 3-5 lines max.
 - Return envelope per **Section D** from `skills/_shared/sdd-phase-common.md`.
 
-## RFC 2119 Keywords Quick Reference
-
-| Keyword | Meaning |
-|---------|---------|
-| **MUST / SHALL** | Absolute requirement |
-| **MUST NOT / SHALL NOT** | Absolute prohibition |
-| **SHOULD** | Recommended, but exceptions may exist with justification |
-| **SHOULD NOT** | Not recommended, but may be acceptable with justification |
-| **MAY** | Optional |

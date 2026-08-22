@@ -10,7 +10,19 @@ metadata:
   delegate_only: true
 ---
 
-## Execution Role
+# SDD Tasks Skill
+
+## Description
+
+Break an SDD change into implementation tasks.
+
+## Trigger
+
+Trigger phrases: sdd tasks, or when the orchestrator launches task planning for a change.
+
+## Instructions
+
+### Execution Role
 
 Confirm your role before acting. You are the dedicated `sdd-tasks` sub-agent unless you loaded this skill directly through the `skill()` tool.
 
@@ -18,7 +30,7 @@ Confirm your role before acting. You are the dedicated `sdd-tasks` sub-agent unl
 - If you loaded this skill through the `skill()` tool, you are the orchestrator. Stop here and delegate to the dedicated `sdd-tasks` sub-agent using your platform's delegation primitive (for example, `task(...)` or a sub-agent invocation).
 
 
-## Language Domain Contract
+### Language Domain Contract
 
 Generated technical artifacts default to English. Do not inherit the user's conversational language or the active persona's regional voice for SDD artifacts unless the user explicitly requests that artifact language or the project convention requires it.
 
@@ -26,18 +38,18 @@ If technical artifacts are explicitly requested in another language, use a neutr
 
 Public/contextual comments follow the target context language by default. Explicit user language or tone overrides win; otherwise use a neutral/professional register unless the target context clearly calls for another tone or regional variant.
 
-## Purpose
+### Purpose
 
 You are a sub-agent responsible for creating the TASK BREAKDOWN. You take the proposal, specs, and design, then produce a `tasks.md` with concrete, actionable implementation steps organized by phase.
 
-## What You Receive
+### What You Receive
 
 From the orchestrator:
 - Change name
 - Artifact store mode (`engram | openspec | hybrid | none`)
 - Delivery strategy (`ask-on-risk | auto-chain | single-pr | exception-ok`)
 
-## Execution and Persistence Contract
+### Execution and Persistence Contract
 
 > Follow **Section B** (retrieval) and **Section C** (persistence) from `skills/_shared/sdd-phase-common.md`.
 
@@ -46,12 +58,12 @@ From the orchestrator:
 - **hybrid**: Follow BOTH conventions — persist to Engram AND write `tasks.md` to filesystem. Retrieve dependencies from Engram (primary) with filesystem fallback.
 - **none**: Return result only. Never create or modify project files.
 
-## What to Do
+### What to Do
 
-### Step 1: Load Skills
+#### Step 1: Load Skills
 Follow **Section A** from `skills/_shared/sdd-phase-common.md`.
 
-### Step 2: Analyze the Design
+#### Step 2: Analyze the Design
 
 From the design document, identify:
 - All files that need to be created/modified/deleted
@@ -59,7 +71,7 @@ From the design document, identify:
 - Testing requirements per component
 - Every applicable threat-matrix case and its planned RED test; ignore rows explicitly marked `N/A`
 
-### Step 3: Write tasks.md
+#### Step 3: Write tasks.md
 
 **IF mode is `openspec` or `hybrid`:** Create the task file:
 
@@ -73,7 +85,7 @@ openspec/changes/{change-name}/
 
 **IF mode is `engram` or `none`:** Do NOT create any `openspec/` directories or files. Compose the tasks content in memory — you will persist it in Step 4.
 
-#### Task File Format
+##### Task File Format
 
 ```markdown
 # Tasks: {Change Title}
@@ -126,7 +138,7 @@ Chain strategy: <stacked-to-main|feature-branch-chain|size-exception|pending>
 - [ ] 4.2 {Remove temporary code}
 ```
 
-### Task Writing Rules
+##### Task Writing Rules
 
 Each task MUST be:
 
@@ -139,7 +151,7 @@ Each task MUST be:
 
 Every applicable threat-matrix case MUST become an explicit RED-test task before its production task. Preserve the concrete case and expected safe/failure behavior from design; rows marked `N/A` stay omitted.
 
-### Review Workload Forecast Rules
+##### Review Workload Forecast Rules
 
 Before finalizing tasks, estimate whether implementation is likely to exceed the **400 changed-line review budget** (`additions + deletions`). This is a planning guard, not an exact diff count.
 
@@ -175,7 +187,7 @@ You may keep the table for readability, but the plain-text lines are the guard c
 
 For `feature-branch-chain`, suggested work units SHOULD name the intended base boundary: PR #1 base = feature/tracker branch; PR #2 base = PR #1 branch; PR #3 base = PR #2 branch. If a child PR would show previous PR changes, the base is wrong and must be retargeted/rebased before review.
 
-### Phase Organization Guidelines
+##### Phase Organization Guidelines
 
 ```
 Phase 1: Foundation / Infrastructure
@@ -198,7 +210,7 @@ Phase 5: Cleanup (if needed)
   └─ Documentation, remove dead code, polish
 ```
 
-### Step 4: Persist Artifact
+#### Step 4: Persist Artifact
 
 **This step is MANDATORY — do NOT skip it.**
 
@@ -207,7 +219,7 @@ Follow **Section C** from `skills/_shared/sdd-phase-common.md`.
 - topic_key: `sdd/{change-name}/tasks`
 - type: `architecture`
 
-### Step 5: Return Summary
+#### Step 5: Return Summary
 
 Return to the orchestrator:
 

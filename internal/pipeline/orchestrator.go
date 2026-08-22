@@ -37,6 +37,10 @@ func NewOrchestrator(policy RollbackPolicy, opts ...OrchestratorOption) *Orchest
 	return o
 }
 
+func (o *Orchestrator) FailurePolicy() FailurePolicy {
+	return o.runner.FailurePolicy
+}
+
 func (o *Orchestrator) Execute(plan StagePlan) ExecutionResult {
 	o.indexSteps(plan.Prepare)
 	o.indexSteps(plan.Apply)

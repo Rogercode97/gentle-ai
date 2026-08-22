@@ -113,6 +113,21 @@ func TestOrchestratorsProjectOrganicRouting(t *testing.T) {
 	}
 }
 
+func TestAllShippedOrchestratorsKeepDeliveryUnmanaged(t *testing.T) {
+	const ordinaryDelivery = "Commit, push, PR, direct-main, emergency, and release gates are informational and unmanaged; ordinary repository policy decides delivery and they never reopen review for unchanged content."
+	const receiptValidation = "Commit, push, PR, direct-main, emergency, and release gates validate the same exact owner-issued receipt/authorization"
+
+	for _, path := range allSDDOrchestratorAssetPaths(t) {
+		content := MustRead(path)
+		if !strings.Contains(content, ordinaryDelivery) {
+			t.Fatalf("%s does not leave delivery to ordinary repository policy", path)
+		}
+		if strings.Contains(content, receiptValidation) {
+			t.Fatalf("%s retains receipt-gated delivery guidance", path)
+		}
+	}
+}
+
 func TestOrchestratorsRejectDelegationBypassLanguage(t *testing.T) {
 	contents := map[string]string{
 		"claude/sdd-orchestrator.md":   MustRead("claude/sdd-orchestrator.md"),
@@ -248,6 +263,24 @@ func TestAllEmbeddedAssetsAreReadable(t *testing.T) {
 
 		// Antigravity agent files
 		"antigravity/sdd-orchestrator.md",
+		"antigravity/agents/sdd-init.md",
+		"antigravity/agents/sdd-explore.md",
+		"antigravity/agents/sdd-propose.md",
+		"antigravity/agents/sdd-spec.md",
+		"antigravity/agents/sdd-design.md",
+		"antigravity/agents/sdd-tasks.md",
+		"antigravity/agents/sdd-apply.md",
+		"antigravity/agents/sdd-verify.md",
+		"antigravity/agents/sdd-archive.md",
+		"antigravity/agents/sdd-onboard.md",
+		"antigravity/agents/review-risk.md",
+		"antigravity/agents/review-readability.md",
+		"antigravity/agents/review-reliability.md",
+		"antigravity/agents/review-resilience.md",
+		"antigravity/agents/review-refuter.md",
+		"antigravity/agents/jd-judge-a.md",
+		"antigravity/agents/jd-judge-b.md",
+		"antigravity/agents/jd-fix-agent.md",
 
 		// Codex agent files
 		"codex/sdd-orchestrator.md",
@@ -371,12 +404,25 @@ func TestAllEmbeddedAssetsAreReadable(t *testing.T) {
 	}
 }
 
-func TestSDDVerifyAuthorityPreflightDenialEnvelopeContract(t *testing.T) {
-	const denialFields = `authority_only_failure: true
-missing_review_authority: true
-substantive_failure: false
-command_failed: false
-observed_authority_revision: sha256:{observed-authority-revision}`
+func TestSDDVerificationAndArchiveContractsIgnoreReviewContext(t *testing.T) {
+	statusContract := MustRead("skills/_shared/sdd-status-contract.md")
+	for _, want := range []string{
+		"`verify` is `ready` only when every implementation task is complete and required planning/apply evidence is available.",
+		"Review presence, absence, or non-allow state is informational: it never routes status to `review`, suppresses test/build execution, or blocks verification.",
+		"`archive` is `ready` only when tasks are complete and strict SDD verification passes.",
+	} {
+		if !strings.Contains(statusContract, want) {
+			t.Fatalf("sdd-status-contract missing independent SDD verification rule %q", want)
+		}
+	}
+	for _, forbidden := range []string{
+		"persisted bounded transaction reaches `ready_final_verification`",
+		"Missing or active review state routes to `review`",
+	} {
+		if strings.Contains(statusContract, forbidden) {
+			t.Fatalf("sdd-status-contract retains pre-verify review dependency %q", forbidden)
+		}
+	}
 
 	for _, path := range []string{
 		"skills/sdd-verify/SKILL.md",
@@ -384,14 +430,40 @@ observed_authority_revision: sha256:{observed-authority-revision}`
 	} {
 		content := MustRead(path)
 		for _, want := range []string{
-			denialFields,
-			"test_exit_code: 125",
-			"build_exit_code: 125",
-			"must not be executed",
+			"Review state is informational and never a verification prerequisite.",
+			"A missing, pending, invalid, or non-allow review state never suppresses tests or builds.",
+			"Exit `125` is reserved for an actual verification prerequisite or unavailable verification tooling, never missing review authority.",
 		} {
 			if !strings.Contains(content, want) {
-				t.Fatalf("%s missing authority-preflight denial contract %q", path, want)
+				t.Fatalf("%s missing independent verification rule %q", path, want)
 			}
+		}
+		for _, forbidden := range []string{"missing_review_authority", "authority_only_failure"} {
+			if strings.Contains(content, forbidden) {
+				t.Fatalf("%s retains missing-review preflight denial %q", path, forbidden)
+			}
+		}
+	}
+
+	verifySkill := MustRead("skills/sdd-verify/SKILL.md")
+	for _, want := range []string{
+		"Review state is informational and never a verification prerequisite.",
+		"A missing, pending, invalid, or non-allow review state never suppresses tests or builds.",
+		"Exit `125` is reserved for an actual verification prerequisite or unavailable verification tooling, never missing review authority.",
+	} {
+		if got := strings.Count(verifySkill, want); got != 2 {
+			t.Fatalf("sdd-verify must state independent verification in both model sections: %q occurs %d times", want, got)
+		}
+	}
+
+	archiveSkill := MustRead("skills/sdd-archive/SKILL.md")
+	for _, want := range []string{
+		"CRITICAL issues in `verify-report` still block archive with no prompt override",
+		"review context remains informational",
+		"The Task Completion Gate and strict verification decide whether archive can proceed",
+	} {
+		if !strings.Contains(archiveSkill, want) {
+			t.Fatalf("sdd-archive missing independent archive prerequisite %q", want)
 		}
 	}
 }
@@ -1769,7 +1841,7 @@ func TestSDDStatusContractPreservesFrozenExternalV1Projection(t *testing.T) {
 		"verify: [<instruction strings>]",
 		"remediate: [<instruction strings>]",
 		"archive: [<instruction strings>]",
-		"nextRecommended: propose | spec | design | tasks | apply | review | verify | remediate | archive | sdd-new | select-change | resolve-blockers | resolve-review",
+		"nextRecommended: propose | spec | design | tasks | apply | verify | remediate | archive | sdd-new | select-change | resolve-blockers",
 		"blockedReasons: []",
 		"Manual fallback status MUST stay shape-compatible with native `gentle-ai.sdd-status` JSON",
 	} {
@@ -2211,7 +2283,7 @@ func TestSDDArchiveFinalStateAuthorityContract(t *testing.T) {
 		"state of the change AT CLOSE",
 		"`apply-progress` and `verify-report` are intermediate snapshots",
 		"at the time it was written",
-		"**Native review authority**",
+		"**Native review context**",
 		"**The persisted tasks artifact**",
 		"**Explicit final-state facts in the orchestrator's launch prompt**",
 		"outranks intermediate snapshots",
@@ -2221,7 +2293,7 @@ func TestSDDArchiveFinalStateAuthorityContract(t *testing.T) {
 		"Never resolve it silently",
 		"at verification time",
 		"record the failure as undiagnosed",
-		"It does not weaken gates",
+		"review context remains informational",
 		"requires re-running `sdd-verify`",
 	} {
 		if !strings.Contains(skill, required) {
@@ -2384,4 +2456,80 @@ func TestSDDArchiveStoreSpecificFilesystemContract(t *testing.T) {
 		"else\n  diff_status=$?",
 		"if [ \"$diff_status\" -ne 0 ]; then\n  exit \"$diff_status\"",
 	)
+}
+
+func TestAntigravitySubagentsUseValidNativeTools(t *testing.T) {
+	validTools := map[string]bool{
+		"view_file":            true,
+		"write_to_file":        true,
+		"replace_file_content": true,
+		"run_command":          true,
+		"list_dir":             true,
+		"grep_search":          true,
+		"find_by_name":         true,
+		"schedule":             true,
+		"manage_task":          true,
+		"invoke_subagent":      true,
+		"define_subagent":      true,
+		"call_mcp_tool":        true,
+		"read_resource":        true,
+		"list_resources":       true,
+		"send_message":         true,
+		"manage_subagents":     true,
+		"ask_question":         true,
+		"generate_image":       true,
+		"codegraph_explore":    true,
+		"mem_search":           true,
+		"mem_get_observation":  true,
+		"mem_save":             true,
+		"mem_update":           true,
+	}
+
+	antigravityAgentFiles := []string{
+		"antigravity/agents/jd-fix-agent.md",
+		"antigravity/agents/jd-judge-a.md",
+		"antigravity/agents/jd-judge-b.md",
+		"antigravity/agents/review-readability.md",
+		"antigravity/agents/review-refuter.md",
+		"antigravity/agents/review-reliability.md",
+		"antigravity/agents/review-resilience.md",
+		"antigravity/agents/review-risk.md",
+		"antigravity/agents/sdd-apply.md",
+		"antigravity/agents/sdd-archive.md",
+		"antigravity/agents/sdd-design.md",
+		"antigravity/agents/sdd-explore.md",
+		"antigravity/agents/sdd-init.md",
+		"antigravity/agents/sdd-onboard.md",
+		"antigravity/agents/sdd-propose.md",
+		"antigravity/agents/sdd-spec.md",
+		"antigravity/agents/sdd-tasks.md",
+		"antigravity/agents/sdd-verify.md",
+	}
+
+	for _, agentPath := range antigravityAgentFiles {
+		t.Run(agentPath, func(t *testing.T) {
+			content := MustRead(agentPath)
+			if strings.Contains(content, "read_file") {
+				t.Fatalf("%s must not declare unsupported tool 'read_file' (use 'view_file')", agentPath)
+			}
+			if strings.Contains(content, "multi_replace_file_content") {
+				t.Fatalf("%s must not declare unsupported tool 'multi_replace_file_content' (use 'replace_file_content')", agentPath)
+			}
+
+			// Extract tools list from YAML frontmatter
+			for _, line := range strings.Split(content, "\n") {
+				if strings.HasPrefix(strings.TrimSpace(line), "tools:") {
+					// Parse tools: ["a", "b"]
+					raw := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "tools:"))
+					raw = strings.Trim(raw, "[]")
+					for _, item := range strings.Split(raw, ",") {
+						tool := strings.Trim(strings.TrimSpace(item), "\"")
+						if tool != "" && !validTools[tool] {
+							t.Fatalf("%s declares unknown/unsupported tool %q in Antigravity", agentPath, tool)
+						}
+					}
+				}
+			}
+		})
+	}
 }
