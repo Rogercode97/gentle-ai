@@ -788,6 +788,8 @@ func TestCodeGraphConfiguredDetectsAntigravityCodeGraphPlugin(t *testing.T) {
 	home := t.TempDir()
 	mustWrite(t, filepath.Join(home, ".gemini", "antigravity-cli", "settings.json"), `{}`)
 	mustWrite(t, filepath.Join(home, ".gemini", "antigravity-cli", "plugins", "gentle-ai-codegraph", "mcp_config.json"), string(antigravityCodeGraphMCPJSON()))
+	// hasCodeGraphToolWiring checks the legacy/unified antigravity mcp_config path.
+	mustWrite(t, filepath.Join(home, ".gemini", "antigravity", "mcp_config.json"), string(antigravityCodeGraphMCPJSON()))
 
 	configured := HasConfiguredCodeGraph(home, DetectorFunc(func(name string) (string, error) {
 		if name == "codegraph" {
@@ -799,6 +801,7 @@ func TestCodeGraphConfiguredDetectsAntigravityCodeGraphPlugin(t *testing.T) {
 		t.Fatal("HasConfiguredCodeGraph() = false, want true for Antigravity CodeGraph plugin MCP config")
 	}
 }
+
 
 func TestCodeGraphGuidanceAntigravityPluginMergePreservesExistingConfig(t *testing.T) {
 	home := t.TempDir()
