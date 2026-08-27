@@ -43,7 +43,7 @@ func TestBoundedReviewContractLeavesAtomicLifecycleToNativeGo(t *testing.T) {
 	}
 }
 
-func TestRenderedReviewRuntimesRequireOneBoundStatusBeforeAmbiguousFinalizeReplay(t *testing.T) {
+func TestRenderedReviewRuntimesRequireOneBoundStatusBeforeAmbiguousCaptureReplay(t *testing.T) {
 	for _, runtime := range []struct {
 		name  string
 		agent model.AgentID
@@ -56,15 +56,15 @@ func TestRenderedReviewRuntimesRequireOneBoundStatusBeforeAmbiguousFinalizeRepla
 		t.Run(runtime.name, func(t *testing.T) {
 			rendered := renderBoundedReviewAsset(runtime.agent, runtime.path)
 			for _, clause := range []string{
-				"Clean FINALIZE success stops with no terminal STATUS.",
-				"After any non-clean FINALIZE result, malformed or no output, transport loss, or post-mutation processing failure, issue exactly one retained target-bound read-only STATUS before replay.",
+				"The final reviewer, refuter, or targeted-validator capture owns closure.",
+				"A malformed, incomplete, or unavailable capture never burns authority: issue one retained target-bound read-only STATUS and relaunch only when it reoffers the same bound slot.",
 			} {
 				if !strings.Contains(rendered, clause) {
 					t.Fatalf("%s rendered contract is missing %q", runtime.name, clause)
 				}
 			}
 			if strings.Contains(rendered, "only while that authority still exists") {
-				t.Fatalf("%s rendered contract still narrows ambiguous FINALIZE recovery to a surviving authority", runtime.name)
+				t.Fatalf("%s rendered contract still narrows ambiguous capture recovery to a surviving authority", runtime.name)
 			}
 		})
 	}
@@ -96,11 +96,6 @@ func TestReviewerTransportAdaptersNeverInvokeLifecycleFinalize(t *testing.T) {
 
 func TestDedicatedReviewAndJudgmentAssetsRenderRoleContracts(t *testing.T) {
 	assetsByFamily := map[string][]string{
-		"antigravity": {
-			"antigravity/agents/review-risk.md", "antigravity/agents/review-readability.md",
-			"antigravity/agents/review-reliability.md", "antigravity/agents/review-resilience.md",
-			"antigravity/agents/jd-judge-a.md", "antigravity/agents/jd-judge-b.md",
-		},
 		"claude": {
 			"claude/agents/review-risk.md", "claude/agents/review-readability.md",
 			"claude/agents/review-reliability.md", "claude/agents/review-resilience.md",
@@ -462,9 +457,17 @@ func TestKilocodeReviewSettingsMatchCurrentMainBaseline(t *testing.T) {
 	// renders through the OpenCode orchestrator asset. The hash is rederived.
 	// #3417 also classifies OpenCode background launch acknowledgements as
 	// nonterminal, preventing false task-result failures and session latches.
-	// #3442 adds unachievable_reviewer_attempt stop-reason row, so the
-	// hash moved. Deliberate, not drift.
-	const want = "8b4e161971530355248addfc62fb101d1ea71a5ba4e293b427e85c87a2c535c7"
+	// sdd-research adds a default-deny collection executor and the confirmed
+	// pre-proposal handoff to the shared OpenCode/Kilocode overlay. The rendered
+	// settings hash is recomputed from the combined source.
+	// #3564 replaces the shared SDD status contract with v2, so the embedded
+	// pre-proposal contract now names the sole public status version.
+	// Managed tools are removed only from OpenCode. Kilocode restores its
+	// historical provider shape, including read-only judges and default-deny
+	// sdd-research collection permissions, so the baseline is rederived here.
+	// Merged with main's #3563 causal-failure precedence and #3168 empty
+	// CodeGraph tool-grant changes, so the combined baseline is rederived.
+	const want = "673ed8caf9d34e0b88eeb6a1d1b479762189532a8e35b9e6e082a91be86e7938"
 	if got != want {
 		t.Fatalf("Kilocode settings SHA-256 = %s, want current-main baseline %s", got, want)
 	}
@@ -684,11 +687,11 @@ func TestOpenCodeRenderedReviewProtocolCost(t *testing.T) {
 		// #3417 replaces the terminal commit question with non-deciding delivery
 		// guidance and adds the one-status ambiguous-FINALIZE reconciliation rule.
 		// The rendered byte pins are regenerated from those shared source bytes.
-		// #3442: the stop-reason table gains unachievable_reviewer_attempt
-		// (+366 characters in both renderings, ~92 tokens, still over 15%
-		// headroom). Deliberate, not drift.
-		{name: "standard", agents: []string{"review-reliability"}, beforeChars: 42_301, wantChars: 15440, maxCharacters: 26_000},
-		{name: "full-4R", agents: []string{"review-risk", "review-resilience", "review-readability", "review-reliability"}, beforeChars: 106_998, wantChars: 27785, maxCharacters: 41_000},
+		// #3748 adds the public status_continuation execution rule (+339 rendered
+		// characters in each row), so the pins move from 14,657/27,002 to
+		// 14,996/27,341 after deterministic fixture measurement.
+		{name: "standard", agents: []string{"review-reliability"}, beforeChars: 42_301, wantChars: 15_132, maxCharacters: 15_866},
+		{name: "full-4R", agents: []string{"review-risk", "review-resilience", "review-readability", "review-reliability"}, beforeChars: 106_998, wantChars: 27_477, maxCharacters: 30_063},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

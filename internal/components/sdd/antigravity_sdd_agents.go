@@ -155,7 +155,15 @@ func installAntigravitySddAgentsPlugin(homeDir string) (bool, []string, error) {
 		files = append(files, pluginPath)
 
 		hooksPath := filepath.Join(pluginDir, "hooks.json")
-		hooksWrite, err := mergeJSONFile(hooksPath, antigravitySddAgentsHooksJSON())
+		hooksBase, err := readFileOrEmpty(hooksPath)
+		if err != nil {
+			return false, nil, fmt.Errorf("read hooks: %w", err)
+		}
+		var baseBytes []byte
+		if hooksBase != "" {
+			baseBytes = []byte(hooksBase)
+		}
+		hooksWrite, err := mergeJSONFileContents(hooksPath, baseBytes, antigravitySddAgentsHooksJSON())
 		if err != nil {
 			return false, nil, fmt.Errorf("write Antigravity SDD agents plugin hooks (%s): %w", cfgDir, err)
 		}

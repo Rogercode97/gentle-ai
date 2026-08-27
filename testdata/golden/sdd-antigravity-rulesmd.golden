@@ -326,6 +326,9 @@ If the user doesn't specify, default to **Automatic**. After scope approval, exp
 
 Cache the mode choice for the session — do not ask again unless the user explicitly requests a mode change.
 
+
+### Research and Pre-Proposal Gate (MANDATORY) — Offer `sdd-research` immediately after `sdd-explore`; selection makes completion mandatory. Before every `propose`, invoke `sdd-propose` only when selected research is `done` or research is unselected, product decisions are `confirmed`, evidence references are valid, and the selected artifact-store state is ready. The orchestrator owns product discovery. Automatic unresolved choices require one lossless grouped prompt with all context, options, consequences, allowed answers, and exact tokens; it MUST persist the pending state before prompting, then STOP without invoking `sdd-propose`. The proposer receives a confirmed pre-proposal handoff and MUST NOT interview or infer consent. Native `gentle-ai.sdd-status/v2` is the sole status contract.
+
 For this agent (dynamic subagent execution): **Interactive** means the orchestrator pauses between dynamic phase invocations. **Automatic** means the orchestrator may invoke dependency-ready phase subagents back-to-back (except for `sdd-apply`, which always requires confirmation) only after each automatic gatekeeper check passes.
 
 **Absolute Stop Rules (MANDATORY)**:

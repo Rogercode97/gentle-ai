@@ -260,6 +260,29 @@ Use today's date in ISO format (e.g., `2026-02-16`).
 
 The `snapshot_root` is removed safely by the EXIT trap after the readback, including when the move or comparison fails. Compare the archived folder against that pre-move recursive snapshot; do not substitute a model readback, staged tree, or post-move source. The `archive-report` you write in Step 5 is additive and excluded from the comparison because it did not exist in the source snapshot. Any non-empty `diff -r` output or non-zero status is truncation, alteration, or an operational failure and FAILS the phase; a missing `diff -r` also FAILS the phase.
 
+The portable destination guard rejects a destination that already exists before either move attempt; it does not provide an atomic cross-process no-clobber guarantee. Do not add a suffix, overwrite, merge, delete, or otherwise choose a destination automatically.
+
+#### Historical Malformed Nesting Recovery (Manual Only)
+
+This guidance is only for the historical malformed shape `archive/YYYY-MM-DD-{change-name}/{change-name}/`. Run this block manually only after inspecting the paths:
+
+```bash
+active_source="openspec/changes/{change-name}"
+outer_destination="openspec/changes/archive/YYYY-MM-DD-{change-name}"
+nested_source="$outer_destination/{change-name}"
+
+if [ -e "$active_source" ] || [ -L "$active_source" ] ||
+   [ ! -d "$outer_destination" ] || [ -L "$outer_destination" ] ||
+   [ ! -d "$nested_source" ] || [ -L "$nested_source" ]; then
+  printf 'historical archive recovery refused: active source must be absent, and outer destination and nested source must be real directories; all paths remain unchanged. Resolve the ambiguous shape manually.\n' >&2
+  exit 1
+fi
+
+mv "$nested_source" "$active_source"
+```
+
+Never automatically delete, overwrite, or merge the outer archive directory. If the active source exists or is a symlink, the outer destination or nested source is not a real directory, or the shape is otherwise ambiguous, stop and resolve the paths manually. After the active source is restored and the collision is resolved, rerun this archive step.
+
 #### Step 4: Verify Archive
 
 **IF mode is `openspec` or `hybrid`:** The Mechanical Copy Contract above is the verification: the verbatim `diff -r` output from Steps 2 and 3 MUST appear in the phase result, and an empty diff is the only passing evidence. In addition, confirm:

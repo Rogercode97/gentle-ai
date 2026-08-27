@@ -329,6 +329,9 @@ If the user doesn't specify, default to **Automatic**. After scope approval, exp
 
 Cache the mode choice for the session — do not ask again unless the user explicitly requests a mode change.
 
+
+{{GENTLE_AI_RESEARCH_LIFECYCLE}}
+
 For this agent (dynamic subagent execution): **Interactive** means the orchestrator pauses between dynamic phase invocations. **Automatic** means the orchestrator may invoke dependency-ready phase subagents back-to-back (except for `sdd-apply`, which always requires confirmation) only after each automatic gatekeeper check passes.
 
 **Absolute Stop Rules (MANDATORY)**:
