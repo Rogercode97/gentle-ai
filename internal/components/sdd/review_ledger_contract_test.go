@@ -462,6 +462,8 @@ func TestKilocodeReviewSettingsMatchCurrentMainBaseline(t *testing.T) {
 	// renders through the OpenCode orchestrator asset. The hash is rederived.
 	// #3417 also classifies OpenCode background launch acknowledgements as
 	// nonterminal, preventing false task-result failures and session latches.
+	// #3442 adds unachievable_reviewer_attempt stop-reason row, so the
+	// hash moved. Deliberate, not drift.
 	const want = "8b4e161971530355248addfc62fb101d1ea71a5ba4e293b427e85c87a2c535c7"
 	if got != want {
 		t.Fatalf("Kilocode settings SHA-256 = %s, want current-main baseline %s", got, want)
@@ -682,8 +684,11 @@ func TestOpenCodeRenderedReviewProtocolCost(t *testing.T) {
 		// #3417 replaces the terminal commit question with non-deciding delivery
 		// guidance and adds the one-status ambiguous-FINALIZE reconciliation rule.
 		// The rendered byte pins are regenerated from those shared source bytes.
-		{name: "standard", agents: []string{"review-reliability"}, beforeChars: 42_301, wantChars: 15_304, maxCharacters: 15_866},
-		{name: "full-4R", agents: []string{"review-risk", "review-resilience", "review-readability", "review-reliability"}, beforeChars: 106_998, wantChars: 27_649, maxCharacters: 30_063},
+		// #3442: the stop-reason table gains unachievable_reviewer_attempt
+		// (+366 characters in both renderings, ~92 tokens, still over 15%
+		// headroom). Deliberate, not drift.
+		{name: "standard", agents: []string{"review-reliability"}, beforeChars: 42_301, wantChars: 15440, maxCharacters: 26_000},
+		{name: "full-4R", agents: []string{"review-risk", "review-resilience", "review-readability", "review-reliability"}, beforeChars: 106_998, wantChars: 27785, maxCharacters: 41_000},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -1260,3 +1260,98 @@ func TestReviewStopTransitionEmitsStructuredContinuations(t *testing.T) {
 		}
 	}
 }
+func TestReviewerSlotRetryAccounting(t *testing.T) {
+	t.Parallel()
+
+	state := reviewtransaction.CompactState{
+		LineageID:       "test-lineage",
+		State:           reviewtransaction.StateReviewing,
+		SelectedLenses:  []string{"review-reliability", "review-readability"},
+		InitialSnapshot: reviewtransaction.Snapshot{Identity: strings.Repeat("a", 64)},
+		CurrentSnapshot: reviewtransaction.Snapshot{Identity: strings.Repeat("a", 64)},
+	}
+	revision := strings.Repeat("b", 64)
+
+	unachievedArtifact := func(order int, lens string) ReviewTransitionArtifact {
+		return ReviewTransitionArtifact{
+			Schema:            reviewResultArtifactSchema,
+			Capability:        reviewResultArtifactCapability,
+			SHA256:            "sha256:" + strings.Repeat("1", 64),
+			LineageID:         state.LineageID,
+			TargetIdentity:    state.InitialSnapshot.Identity,
+			Lens:              lens,
+			SelectedOrder:     order,
+			SubjectHash:       "sha256:" + strings.Repeat("2", 64),
+			AdmissionDecision: reviewtransaction.ArtifactAdmissionUnachievable,
+		}
+	}
+
+	completedArtifact := func(order int, lens string) ReviewTransitionArtifact {
+		return ReviewTransitionArtifact{
+			Schema:            reviewResultArtifactSchema,
+			Capability:        reviewResultArtifactCapability,
+			SHA256:            "sha256:" + strings.Repeat("3", 64),
+			LineageID:         state.LineageID,
+			TargetIdentity:    state.InitialSnapshot.Identity,
+			Lens:              lens,
+			SelectedOrder:     order,
+			SubjectHash:       "sha256:" + strings.Repeat("4", 64),
+			AdmissionDecision: reviewtransaction.ArtifactAdmissionCompleted,
+		}
+	}
+
+	t.Run("1 unachieved attempt reoffers collect", func(t *testing.T) {
+		artifacts := []ReviewTransitionArtifact{
+			unachievedArtifact(0, "review-reliability"),
+		}
+		transition := reviewFinalizeNextTransition(state, revision, artifacts, nil)
+		if transition.Kind != reviewNextTransitionCollect || transition.ReasonCode != "reviewer_results_required" {
+			t.Fatalf("expected collect reviewer_results_required, got %#v", transition)
+		}
+		if transition.Collect == nil || len(transition.Collect.Inputs) != 2 {
+			t.Fatalf("expected 2 collect inputs, got %#v", transition.Collect)
+		}
+	})
+
+	t.Run("2 unachieved attempts reoffers collect", func(t *testing.T) {
+		artifacts := []ReviewTransitionArtifact{
+			unachievedArtifact(0, "review-reliability"),
+			unachievedArtifact(0, "review-reliability"),
+			completedArtifact(1, "review-readability"),
+		}
+		transition := reviewFinalizeNextTransition(state, revision, artifacts, nil)
+		if transition.Kind != reviewNextTransitionCollect || transition.ReasonCode != "reviewer_results_required" {
+			t.Fatalf("expected collect reviewer_results_required, got %#v", transition)
+		}
+		if transition.Collect == nil || len(transition.Collect.Inputs) != 1 {
+			t.Fatalf("expected 1 collect input for uncompleted slot, got %#v", transition.Collect)
+		}
+		if transition.Collect.Inputs[0].Arguments[len(transition.Collect.Inputs[0].Arguments)-2].Value != "review-reliability" {
+			t.Fatalf("expected collect input for review-reliability, got %#v", transition.Collect.Inputs[0])
+		}
+	})
+
+	t.Run("3 unachieved attempts triggers unachievable_reviewer_attempt stop", func(t *testing.T) {
+		artifacts := []ReviewTransitionArtifact{
+			unachievedArtifact(0, "review-reliability"),
+			unachievedArtifact(0, "review-reliability"),
+			unachievedArtifact(0, "review-reliability"),
+			completedArtifact(1, "review-readability"),
+		}
+		transition := reviewFinalizeNextTransition(state, revision, artifacts, nil)
+		if transition.Kind != reviewNextTransitionStop || transition.ReasonCode != "unachievable_reviewer_attempt" {
+			t.Fatalf("expected stop unachievable_reviewer_attempt, got %#v", transition)
+		}
+	})
+
+	t.Run("all slots completed triggers execute finalize", func(t *testing.T) {
+		artifacts := []ReviewTransitionArtifact{
+			completedArtifact(0, "review-reliability"),
+			completedArtifact(1, "review-readability"),
+		}
+		transition := reviewFinalizeNextTransition(state, revision, artifacts, nil)
+		if transition.Kind != reviewNextTransitionExecute || transition.ReasonCode != "captured_results_ready" {
+			t.Fatalf("expected execute captured_results_ready, got %#v", transition)
+		}
+	})
+}

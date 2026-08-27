@@ -141,6 +141,11 @@ var reviewStopInvariantClassification = map[string]reviewStopDisposition{
 		Terminal:      false,
 		Justification: "caller-continuable: receipt-driven development is disabled; run `gentle-ai review mode enable` to turn it back on, then re-run the exact `review status --next-transition --contract <contract> <selector-args>` command that produced this stop — a concrete, flag-driven continuation; the same typed error the start gate already names",
 	},
+	"unachievable_reviewer_attempt": {
+		Terminal:      true,
+		Justification: "a selected review lens reached its bounded attempt limit without producing an admitted result; requires maintainer or user inspection of the reviewer failure",
+		ToolFault:     reviewStopToolFault(false),
+	},
 }
 
 type reviewStopDisposition struct {

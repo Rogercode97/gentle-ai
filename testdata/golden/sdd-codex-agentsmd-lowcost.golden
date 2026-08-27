@@ -172,6 +172,7 @@ A `stop` ends its transition, never approves delivery. Complete atomic inventory
 | --- | --- |
 | `captured_verification_evidence_invalid`, `captured_artifacts_unverifiable` | Terminal — maintainer inspects B authority, or `D`. |
 | `captured_result_selection_unavailable`, `final_verification_retry_unavailable` | Terminal — maintainer inspects lineage, or `D`. |
+| `unachievable_reviewer_attempt` | Terminal — lens attempt limit reached without admitted result; inspect reviewer failures, or `D`. |
 | `missing_authority_binding` | Terminal — file a bounded defect with lineage, or `D`. |
 | `corrupted_or_unverifiable_authority`, `manual_intervention_required`, `native_stop_required` | Terminal — maintainer inspects authority/lineage, or `D`. |
 | `empty_base_diff_bootstrap_required` | Terminal — authorized empty-root bootstrap for a new target, or `D`. |
