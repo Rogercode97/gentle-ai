@@ -15,14 +15,22 @@ Naming convention: `gentle-ai-*` skills are repo-specific workflow skills. Unpre
 
 | Skill | Trigger | Path |
 |-------|---------|------|
-| `issue-creation` | When creating a GitHub issue, reporting a bug, or requesting a feature. | [`internal/assets/skills/issue-creation/SKILL.md`](internal/assets/skills/issue-creation/SKILL.md) |
-| `gentle-ai-branch-pr` | When creating a pull request, opening a PR, or preparing changes for review. | [`skills/branch-pr/SKILL.md`](skills/branch-pr/SKILL.md) |
-| `gentle-ai-chained-pr` | When a change is too large for one review, or when creating chained/stacked pull requests. | [`skills/chained-pr/SKILL.md`](skills/chained-pr/SKILL.md) |
-| `cognitive-doc-design` | When writing docs that must reduce cognitive load for readers or reviewers. | [`skills/cognitive-doc-design/SKILL.md`](skills/cognitive-doc-design/SKILL.md) |
-| `comment-writer` | When drafting human comments, PR feedback, issue replies, or async updates. | [`skills/comment-writer/SKILL.md`](skills/comment-writer/SKILL.md) |
-| `work-unit-commits` | When splitting implementation work into deliverable commits or chained PRs. | [`skills/work-unit-commits/SKILL.md`](skills/work-unit-commits/SKILL.md) |
-| `rdd-defect-workflow` | When RDD defects involve receipts, authority, recovery, delivery gates, or kill switches. | [`skills/rdd-defect-workflow/SKILL.md`](skills/rdd-defect-workflow/SKILL.md) |
-| `rdd-advisory-transport` | When changing reviewer transport, adapters, lens prompts/schemas, or transport capability policy. | [`skills/rdd-advisory-transport/SKILL.md`](skills/rdd-advisory-transport/SKILL.md) |
-| `issue-root-resolution` | When auditing backlog roots, proposing cluster fixes, or closing resolved/outdated issues. | [`skills/issue-root-resolution/SKILL.md`](skills/issue-root-resolution/SKILL.md) |
-| `systemic-issue-triage` | When triaging issues, bugs, backlogs, root causes, dead ends, or blocked users. | [`skills/systemic-issue-triage/SKILL.md`](skills/systemic-issue-triage/SKILL.md) |
-| `gentle-ai-bench` | When touching `bench/`, journeys, driven mode, the journey corpus, or bench axes. | [`skills/gentle-ai-bench/SKILL.md`](skills/gentle-ai-bench/SKILL.md) |
+| `branch-pr` | creating, opening, or preparing PRs for review | [`internal/assets/skills/branch-pr/SKILL.md`](internal/assets/skills/branch-pr/SKILL.md) |
+| `chained-pr` | PRs over 400 lines, stacked PRs, review slices | [`internal/assets/skills/chained-pr/SKILL.md`](internal/assets/skills/chained-pr/SKILL.md) |
+| `cognitive-doc-design` | writing guides, READMEs, RFCs, onboarding, architecture, or review-facing docs | [`skills/cognitive-doc-design/SKILL.md`](skills/cognitive-doc-design/SKILL.md) |
+| `comment-writer` | PR feedback, issue replies, reviews, Slack messages, or GitHub comments | [`skills/comment-writer/SKILL.md`](skills/comment-writer/SKILL.md) |
+| `gentle-ai-bench` | bench, journey, journeys, driven mode, gentle-ai-bench, journey corpus, j-numbers, bench axis | [`skills/gentle-ai-bench/SKILL.md`](skills/gentle-ai-bench/SKILL.md) |
+| `gentle-ai-branch-pr` | creating, opening, or preparing PRs for review | [`skills/branch-pr/SKILL.md`](skills/branch-pr/SKILL.md) |
+| `gentle-ai-chained-pr` | PRs over 400 lines, stacked PRs, review slices | [`skills/chained-pr/SKILL.md`](skills/chained-pr/SKILL.md) |
+| `gentle-ai-collab-perfect` | contributing to Gentleman-Programming/gentle-ai as an external collaborator | [`skills/gentle-ai-collab-perfect/SKILL.md`](skills/gentle-ai-collab-perfect/SKILL.md) |
+| `go-testing` | Go tests, go test coverage, Bubbletea teatest, golden files | [`internal/assets/skills/go-testing/SKILL.md`](internal/assets/skills/go-testing/SKILL.md) |
+| `hermes-ephemeral-delegation` | broad exploration, multi-file reads, tests/builds, fresh review, or multi-step debug | [`internal/assets/skills/hermes-ephemeral-delegation/SKILL.md`](internal/assets/skills/hermes-ephemeral-delegation/SKILL.md) |
+| `issue-creation` | issue creation, bug reports, feature requests, or issue approval | [`internal/assets/skills/issue-creation/SKILL.md`](internal/assets/skills/issue-creation/SKILL.md) |
+| `issue-root-resolution` | root audit, atacar la raíz, issue roots, backlog roots, mechanism map, deletion-driven fix, resolver issues de raíz, close outdated issues | [`skills/issue-root-resolution/SKILL.md`](skills/issue-root-resolution/SKILL.md) |
+| `judgment-day` | judgment day, dual review, adversarial review, juzgar | [`internal/assets/skills/judgment-day/SKILL.md`](internal/assets/skills/judgment-day/SKILL.md) |
+| `rdd-advisory-transport` | reviewer transport, advisory transport, review adapter, lens prompt/schema, OpenCode reviewer plugin, Codex reviewer, ReviewProviderContract | [`skills/rdd-advisory-transport/SKILL.md`](skills/rdd-advisory-transport/SKILL.md) |
+| `rdd-defect-workflow` | RDD, receipt-driven development, review authority, receipt/lineage, correction/recovery, delivery gate/kill switch, bounded review defects | [`skills/rdd-defect-workflow/SKILL.md`](skills/rdd-defect-workflow/SKILL.md) |
+| `skill-creator` | new skills, agent instructions, documenting AI usage patterns | [`internal/assets/skills/skill-creator/SKILL.md`](internal/assets/skills/skill-creator/SKILL.md) |
+| `skill-improver` | improve skills, audit skills, refactor skills, skill quality | [`internal/assets/skills/skill-improver/SKILL.md`](internal/assets/skills/skill-improver/SKILL.md) |
+| `systemic-issue-triage` | new issue, bug report, triage, backlog, issue flood, community report, root cause, dead-end, blocked user | [`skills/systemic-issue-triage/SKILL.md`](skills/systemic-issue-triage/SKILL.md) |
+| `work-unit-commits` | implementation, commit splitting, chained PRs, or keeping tests and docs with code | [`skills/work-unit-commits/SKILL.md`](skills/work-unit-commits/SKILL.md) |
