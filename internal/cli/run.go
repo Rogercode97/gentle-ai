@@ -20,6 +20,7 @@ import (
 	codexagent "github.com/gentleman-programming/gentle-ai/v3/internal/agents/codex"
 	"github.com/gentleman-programming/gentle-ai/v3/internal/agents/kimi"
 	opencodeagent "github.com/gentleman-programming/gentle-ai/v3/internal/agents/opencode"
+	"github.com/gentleman-programming/gentle-ai/v3/internal/agents/pi"
 	"github.com/gentleman-programming/gentle-ai/v3/internal/assets"
 	"github.com/gentleman-programming/gentle-ai/v3/internal/backup"
 	"github.com/gentleman-programming/gentle-ai/v3/internal/components/agentguidance"
@@ -1825,6 +1826,9 @@ func (s agentInstallStep) Run() error {
 		return fmt.Errorf("preflight for agent %q: %w", s.agent, err)
 	}
 
+	// [TERMUX EDITION] Ensure ~/.pi/agent/npm/.npmrc has force=true on Termux/Android
+	_ = pi.EnsureTermuxNpmrc(s.homeDir)
+
 	commands, err := adapter.InstallCommand(s.profile)
 	if err != nil {
 		return fmt.Errorf("resolve install command for %q: %w", s.agent, err)
@@ -2639,6 +2643,11 @@ func executeCommand(name string, args ...string) error {
 	cmd := exec.Command(name, args...)
 	cmd.Env = commandEnv(name, args, os.Environ())
 	system.EnsureCommandDir(cmd)
+
+	// [TERMUX EDITION] Pass npm_config_force=true so npm and pi ignore platform restrictions on Android/Termux
+	if system.IsTermux() {
+		cmd.Env = append(os.Environ(), "npm_config_force=true", "NPM_CONFIG_FORCE=true")
+	}
 
 	if streamCommandOutput {
 		cmd.Stdout = os.Stdout

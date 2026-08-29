@@ -398,6 +398,37 @@ func resolvePiAgentDirOverride(override, homeDir string) string {
 	}
 }
 
+// EnsureTermuxNpmrc ensures ~/.pi/agent/npm/.npmrc and ~/.pi/npm/.npmrc
+// contain force=true on Termux/Android to prevent EBADPLATFORM errors
+// from packages with binary dependencies (e.g. @ff-labs/fff-node).
+func EnsureTermuxNpmrc(homeDir string) error {
+	if !system.IsTermux() {
+		return nil
+	}
+	paths := []string{
+		filepath.Join(ConfigPath(homeDir), piNPMDirectory, ".npmrc"),
+		filepath.Join(AgentConfigPath(homeDir), piNPMDirectory, ".npmrc"),
+	}
+	for _, p := range paths {
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			continue
+		}
+		data, err := os.ReadFile(p)
+		if err != nil && !os.IsNotExist(err) {
+			continue
+		}
+		content := string(data)
+		if !strings.Contains(content, "force") {
+			if len(content) > 0 && !strings.HasSuffix(content, "\n") {
+				content += "\n"
+			}
+			content += "force=true\n"
+			_ = os.WriteFile(p, []byte(content), 0o644)
+		}
+	}
+	return nil
+}
+
 // ProvisionEngramMCP declares pi-mcp-adapter in Pi's settings.json and
 // package.json. It is invoked by ComponentEngram; keeping it here lets Pi
 // own the exact config shape without teaching the generic Engram injector
@@ -406,6 +437,7 @@ func resolvePiAgentDirOverride(override, homeDir string) string {
 // mcp.json is NOT written here. pi-engram init (invoked by InstallCommand)
 // is the sole writer of that file and owns its schema.
 func (a *Adapter) ProvisionEngramMCP(homeDir string) (bool, []string, error) {
+	_ = EnsureTermuxNpmrc(homeDir)
 	paths := []string{
 		a.SettingsPath(homeDir),
 		// Pi's npm manifest lives at <agentDir>/npm/package.json
