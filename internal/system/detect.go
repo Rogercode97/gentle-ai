@@ -87,9 +87,14 @@ func Detect(ctx context.Context) (DetectionResult, error) {
 	configs := ScanConfigs(homeDir)
 	osReleaseContent, _ := osReleaseContent(runtime.GOOS)
 
-	result := detectFromInputs(runtime.GOOS, runtime.GOARCH, os.Getenv("SHELL"), osReleaseContent, tools, configs)
-	// On Windows, npm global prefix is user-writable by default (no sudo needed).
-	if runtime.GOOS == "windows" {
+	effectiveOS := runtime.GOOS
+	if IsTermux() {
+		effectiveOS = "android"
+	}
+
+	result := detectFromInputs(effectiveOS, runtime.GOARCH, os.Getenv("SHELL"), osReleaseContent, tools, configs)
+	// On Windows or Android/Termux, npm global prefix is user-writable by default (no sudo needed).
+	if effectiveOS == "windows" || effectiveOS == "android" {
 		result.System.Profile.NpmWritable = true
 	} else {
 		result.System.Profile.NpmWritable = detectNpmWritable(homeDir)
@@ -147,16 +152,17 @@ func osReleaseContent(goos string) (string, error) {
 	return string(data), nil
 }
 
+// IsTermux checks if the current environment is running inside Termux on Android.
+func IsTermux() bool {
+	if runtime.GOOS == "android" {
+		return true
+	}
+	prefix := os.Getenv("PREFIX")
+	return prefix != "" && strings.Contains(prefix, "com.termux")
+}
+
 func resolvePlatformProfile(goos, linuxOSRelease string, tools map[string]ToolStatus) PlatformProfile {
 	profile := PlatformProfile{OS: goos}
-
-	// [TERMUX EDITION] Dynamic detection for Termux environments
-	if prefix := os.Getenv("PREFIX"); prefix != "" && strings.Contains(prefix, "com.termux") {
-		profile.OS = "android"
-		profile.PackageManager = "apt"
-		profile.Supported = true
-		return profile
-	}
 
 	// Detect Go availability for the brew → go-install → binary auto-detect order.
 	if go_, ok := tools["go"]; ok && go_.Installed {

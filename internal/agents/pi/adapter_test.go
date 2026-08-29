@@ -374,3 +374,21 @@ func TestMergePiSettingsFileRemovesLegacySubagentPackages(t *testing.T) {
 		t.Fatalf("packages = %#v", settings.Packages)
 	}
 }
+
+func TestEnsureTermuxNpmrcCreatesNpmrcWithForce(t *testing.T) {
+	home := t.TempDir()
+	if err := EnsureTermuxNpmrc(home); err != nil {
+		t.Fatalf("EnsureTermuxNpmrc() error = %v", err)
+	}
+
+	if system.IsTermux() {
+		agentNpmrc := filepath.Join(home, ".pi", "agent", "npm", ".npmrc")
+		data, err := os.ReadFile(agentNpmrc)
+		if err != nil {
+			t.Fatalf("ReadFile(%q) error = %v", agentNpmrc, err)
+		}
+		if !strings.Contains(string(data), "force=true") {
+			t.Fatalf(".npmrc content = %q, want force=true", string(data))
+		}
+	}
+}
