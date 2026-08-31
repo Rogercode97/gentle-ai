@@ -28,6 +28,8 @@ var reviewProviderAdapterFor = func(contract reviewerprovider.Contract, agent mo
 		return nil, fmt.Errorf("reviewer provider role %q does not permit the compiled transport", contract.Role) // refusal:by-design world-action: a role must explicitly opt in to the compiled provider transport
 	}
 	switch agent {
+	case model.AgentAntigravity:
+		return reviewerprovider.NewAntigravityAdapter(), nil
 	case model.AgentClaudeCode:
 		return reviewerprovider.NewClaudeAdapter(), nil
 	case model.AgentCodex:

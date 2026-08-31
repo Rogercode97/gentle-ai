@@ -22,8 +22,9 @@ var reviewImmutableTransportUnsupportedReason = reviewPreflightReason{
 type reviewImmutableTransport string
 
 const (
-	reviewImmutableTransportUnsupported         reviewImmutableTransport = "unsupported"
-	reviewImmutableTransportClaudePromptCarried reviewImmutableTransport = "claude_prompt_carried"
+	reviewImmutableTransportUnsupported             reviewImmutableTransport = "unsupported"
+	reviewImmutableTransportAntigravityPromptCarried reviewImmutableTransport = "antigravity_prompt_carried"
+	reviewImmutableTransportClaudePromptCarried      reviewImmutableTransport = "claude_prompt_carried"
 	// reviewImmutableTransportOpenCodeProviderInjected is a one-Task,
 	// one-process relay. Go owns the provider contract, prompt materialization,
 	// admission, capture, and completion binding; the OpenCode plugin only
@@ -61,6 +62,8 @@ type reviewImmutableRuntimePolicy struct {
 func reviewImmutableRuntimeCapability(agent model.AgentID) reviewImmutableRuntimePolicy {
 	policy := reviewImmutableRuntimePolicy{Transport: reviewImmutableTransportUnsupported}
 	switch agent {
+	case model.AgentAntigravity:
+		policy.Eligible = true
 	case model.AgentClaudeCode:
 		policy.Eligible = true
 	case model.AgentCodex:
@@ -84,6 +87,8 @@ func reviewImmutableRuntimeCapability(agent model.AgentID) reviewImmutableRuntim
 		return policy
 	}
 	switch agent {
+	case model.AgentAntigravity:
+		policy.Transport = reviewImmutableTransportAntigravityPromptCarried
 	case model.AgentClaudeCode:
 		policy.Transport = reviewImmutableTransportClaudePromptCarried
 	case model.AgentOpenCode:
@@ -97,7 +102,8 @@ func reviewImmutableRuntimeCapability(agent model.AgentID) reviewImmutableRuntim
 }
 
 func (capability reviewImmutableRuntimePolicy) supportsImmutableReceiptReview() bool {
-	return capability.Transport == reviewImmutableTransportClaudePromptCarried ||
+	return capability.Transport == reviewImmutableTransportAntigravityPromptCarried ||
+		capability.Transport == reviewImmutableTransportClaudePromptCarried ||
 		capability.Transport == reviewImmutableTransportOpenCodeProviderInjected ||
 		capability.Transport == reviewImmutableTransportCodexAdvisoryScratchProcess ||
 		capability.Transport == reviewImmutableTransportPiHostRelay

@@ -16,7 +16,8 @@ import (
 var reviewRuntimeIdentityBindingRegexp = regexp.MustCompile(`(?:--agent|agent:) +([A-Za-z0-9._-]+)`)
 
 func expectedReviewLifecycleRuntime(agent model.AgentID) bool {
-	return agent == model.AgentClaudeCode ||
+	return agent == model.AgentAntigravity ||
+		agent == model.AgentClaudeCode ||
 		agent == model.AgentOpenCode ||
 		agent == model.AgentCodex ||
 		agent == model.AgentPi

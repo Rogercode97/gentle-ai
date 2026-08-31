@@ -21,7 +21,7 @@ import "github.com/gentleman-programming/gentle-ai/v2/internal/model"
 // disagrees with itself.
 func CapturesInProcess(agent model.AgentID) bool {
 	switch agent {
-	case model.AgentClaudeCode, model.AgentCodex:
+	case model.AgentAntigravity, model.AgentClaudeCode, model.AgentCodex:
 		return true
 	default:
 		return false

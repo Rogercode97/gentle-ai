@@ -127,7 +127,7 @@ func TestReviewTransportAdmissionRefusalNamesWorkingExits(t *testing.T) {
 		t.Fatalf("unrecognised-runtime refusal code = %q, want %q", failure.Code, reviewTransportCapabilityUnsupportedCode)
 	}
 	const exit = "gentle-ai review mode disable --scope clone --cwd <repo>"
-	if !strings.Contains(failure.Cause, exit) || !strings.Contains(failure.Cause, string(model.AgentClaudeCode)) || !strings.Contains(failure.Cause, string(model.AgentOpenCode)) || !strings.Contains(failure.Cause, string(model.AgentPi)) {
+	if !strings.Contains(failure.Cause, exit) || !strings.Contains(failure.Cause, string(model.AgentAntigravity)) || !strings.Contains(failure.Cause, string(model.AgentClaudeCode)) || !strings.Contains(failure.Cause, string(model.AgentOpenCode)) || !strings.Contains(failure.Cause, string(model.AgentPi)) {
 		t.Fatalf("transport refusal does not name actionable exits: %s", failure.Cause)
 	}
 }
