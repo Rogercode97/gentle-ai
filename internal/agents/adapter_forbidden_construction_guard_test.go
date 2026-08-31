@@ -59,6 +59,7 @@ var adapterForbiddenConstructionPatterns = []struct {
 // adapterForbiddenConstructionPackageDirs are the CON-09/10/11 in-repo Go
 // adapter dispatch surfaces this guard covers.
 var adapterForbiddenConstructionPackageDirs = []string{
+	filepath.Join("antigravity"),
 	filepath.Join("opencode"),
 	filepath.Join("pi"),
 	filepath.Join("claude"),

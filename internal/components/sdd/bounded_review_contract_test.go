@@ -256,14 +256,15 @@ func TestGeneratedOpenCodeReviewControllersUseNegotiatedStatusRouting(t *testing
 }
 
 func TestSharedReviewLifecycleRendersOnlyForAdvertisedRuntimes(t *testing.T) {
-	const wantExposed = 4
+	const wantExposed = 5
 	const lifecycleSentinel = "### Authority-First Terminal Procedure"
 
 	exposed := 0
 	for _, agent := range catalog.AllAgents() {
 		t.Run(string(agent.ID), func(t *testing.T) {
 			content := renderSDDOrchestratorAsset(agent.ID)
-			want := agent.ID == model.AgentClaudeCode ||
+			want := agent.ID == model.AgentAntigravity ||
+				agent.ID == model.AgentClaudeCode ||
 				agent.ID == model.AgentOpenCode ||
 				agent.ID == model.AgentCodex ||
 				agent.ID == model.AgentPi
@@ -334,8 +335,8 @@ func TestBoundedReviewContractRendersForAdvertisedRuntimes(t *testing.T) {
 			}
 		})
 	}
-	if rendered != 4 {
-		t.Fatalf("review lifecycle runtime count = %d, want 4", rendered)
+	if rendered != 5 {
+		t.Fatalf("review lifecycle runtime count = %d, want 5", rendered)
 	}
 	for _, forbidden := range []string{"review-start", "review-step", "review-resume", "review-validate", "review-bundle-export", "review-bundle-import"} {
 		if strings.Contains(boundedReviewContract(), forbidden) {
@@ -570,8 +571,8 @@ func TestAuthorityFirstLifecycleRendersForAdvertisedRuntimes(t *testing.T) {
 			}
 		})
 	}
-	if rendered != 4 {
-		t.Fatalf("authority-first lifecycle runtime count = %d, want 4", rendered)
+	if rendered != 5 {
+		t.Fatalf("authority-first lifecycle runtime count = %d, want 5", rendered)
 	}
 }
 

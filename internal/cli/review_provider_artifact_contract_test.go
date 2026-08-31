@@ -35,8 +35,8 @@ func TestReviewProviderArtifactV1ContractsArePinned(t *testing.T) {
 		// Frozen v1 START artifacts do not project the v3 replay or retired
 		// stale-burn fields.
 		"schemas/start-v2.schema.json":             "ec8550cd93bbe84af1ce87dfd7abfa9e24692f42b20f8f0bf9cac1d4b88ea46c",
-		"schemas/status.schema.json":               "86d0a5ff09a833ff723804c3e31185a80826cbd81a73cf61026feea8c5df2314",
-		"schemas/status-v2.schema.json":            "7c51627d133592839ba4afa860b358b68109afd5f70ee998cd421f563201b23e",
+		"schemas/status.schema.json":               "95bda5787e3c8867e1753e070cf76be0493f3fed3ed688158e829569d050a0f1",
+		"schemas/status-v2.schema.json":            "4aaeacf5c1399216a4451e13d0f81c59a3ea863fd498146bb593246e4a5e1d68",
 		"schemas/transition-execution.schema.json": "ddee03bd0c1b6e70f21c399bae7fe528aa4ad46cebb5a48ec72b6e6b3694aa2d",
 	}
 	for name, expected := range want {
@@ -59,7 +59,7 @@ func TestReviewProviderArtifactV20ContractsArePinned(t *testing.T) {
 		"fixtures/status.fixture.json":       "846377e06df2cae3587c4258ea75fe1ec1b51f08d01f1d498378c3bf13e93921",
 		"schemas/capabilities.schema.json":   "df1d1d36bfb8b7816d3eb1c44c1350b4a36e27ac321922963add9dd25ed5a1a2",
 		"schemas/consent.schema.json":        "b2b4465338497f11927de91cb2e5da12b6cb4a1039afe05aebe1abbf53b21858",
-		"schemas/status.schema.json":         "8f4de69091323f22ce6e7c003c344adada92c76ceb4e938347b4d2027bd70f3a",
+		"schemas/status.schema.json":         "29c50408baa959e592518cd7cce920f12af7dd8c6e4898166c2b4a59611e463c",
 	}
 	for name, expected := range want {
 		payload, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(name)))
@@ -92,7 +92,7 @@ func TestReviewProviderArtifactV21ContractsArePinned(t *testing.T) {
 		// the emitter legitimately publishes once the relay handshake is
 		// declared. Deliberate, not drift.
 		"schemas/consent-v3.schema.json": "f56b1809c1bff21713795ef37a095c6ecfdbbb3cf928bcf604b8d5f33be3dea5",
-		"schemas/status.schema.json":     "8f4de69091323f22ce6e7c003c344adada92c76ceb4e938347b4d2027bd70f3a",
+		"schemas/status.schema.json":     "29c50408baa959e592518cd7cce920f12af7dd8c6e4898166c2b4a59611e463c",
 	}
 	for name, expected := range want {
 		payload, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(name)))
@@ -109,7 +109,7 @@ func TestReviewProviderArtifactV21ContractsArePinned(t *testing.T) {
 func TestReviewProviderArtifactV25StatusContractsArePinned(t *testing.T) {
 	root := filepath.Join("..", "..", "contracts", "review-integration", "v2")
 	want := map[string]string{
-		"fixtures/status-v5.fixture.json": "da401836833192a400493787b256b5f19b3a5ec5fd325ad45d8dcaeadfeea81e",
+		"fixtures/status-v5.fixture.json": "d21eae0dff738b181c3d78481407d956b3d6e8eb0ee0f0d3603ddb468ee1c30b",
 		// Cross-lane battery conformance fix: live negotiated STATUS publishes
 		// the top-level repository_context reference (review_status_contract.go's
 		// ReviewTargetStatusResult, populated since the recovered-units merges),
@@ -123,7 +123,7 @@ func TestReviewProviderArtifactV25StatusContractsArePinned(t *testing.T) {
 		// input with a capture-result submission descriptor, which the
 		// submission oneOf and the no-submission allOf rule both rejected.
 		// Deliberate, not drift.
-		"schemas/status-v5.schema.json": "dd543b0231e412d384f0c955f2d036f9ad17e754ca3c48a2578c9cbb86ce298a",
+		"schemas/status-v5.schema.json": "6b5ba6512c98496b26b24e228f7ce4f8fba31415f54549f046b51c0d45ad9ea5",
 	}
 	for name, expected := range want {
 		payload, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(name)))

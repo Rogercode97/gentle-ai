@@ -129,7 +129,7 @@ func TestEveryManifestKeepsWorkRoutingDormantAndHashesCanonically(t *testing.T) 
 	// forwards the Go-issued opaque task to a fresh locked-down pi
 	// subprocess (gentle-pi#311, gentle-ai#3249).
 	wantManifestDigests := map[model.AgentID]string{
-		model.AgentAntigravity:   "sha256:5d3dce05d85632d696341c7438a65991fa0c6224a6fb8ee13231bee36923b220",
+		model.AgentAntigravity:   "sha256:23075925c921fabaa3d63c22e289d9ea074c2145200f2ad1593c8a26338398b2",
 		model.AgentClaudeCode:    "sha256:132b9219b222d35b0e4eafce3dae965c56eb8d79f07dff6d45c42c137e36fd9b",
 		model.AgentCodex:         "sha256:dbf94a3b7815cf68ccd6299c634f3e17be9abc305b3849adee382c65055c5ed9",
 		model.AgentCursor:        "sha256:08e32b28b4cde7ffaf67210354fb95df2aaf424016ec6093190fb38c5f7226cb",
@@ -163,7 +163,7 @@ func TestEveryManifestKeepsWorkRoutingDormantAndHashesCanonically(t *testing.T) 
 			if manifest.Advertises(ContractWorkRoutingV1) {
 				t.Fatal("work-routing must remain unadvertised before final activation")
 			}
-			wantImmutableExecutor := agent == model.AgentClaudeCode || agent == model.AgentOpenCode || agent == model.AgentCodex || agent == model.AgentPi
+			wantImmutableExecutor := agent == model.AgentAntigravity || agent == model.AgentClaudeCode || agent == model.AgentOpenCode || agent == model.AgentCodex || agent == model.AgentPi
 			if got := manifest.Advertises(ContractImmutableReviewExecutorV1); got != wantImmutableExecutor {
 				t.Fatalf("immutable reviewer execution advertised = %t, want %t", got, wantImmutableExecutor)
 			}
@@ -213,7 +213,7 @@ func TestEveryManifestDigestStaysByteStable(t *testing.T) {
 	t.Parallel()
 
 	wantNonPiDigests := map[model.AgentID]string{
-		model.AgentAntigravity:   "sha256:5d3dce05d85632d696341c7438a65991fa0c6224a6fb8ee13231bee36923b220",
+		model.AgentAntigravity:   "sha256:23075925c921fabaa3d63c22e289d9ea074c2145200f2ad1593c8a26338398b2",
 		model.AgentClaudeCode:    "sha256:132b9219b222d35b0e4eafce3dae965c56eb8d79f07dff6d45c42c137e36fd9b",
 		model.AgentCodex:         "sha256:dbf94a3b7815cf68ccd6299c634f3e17be9abc305b3849adee382c65055c5ed9",
 		model.AgentCursor:        "sha256:08e32b28b4cde7ffaf67210354fb95df2aaf424016ec6093190fb38c5f7226cb",
@@ -258,13 +258,14 @@ func TestEveryManifestDigestStaysByteStable(t *testing.T) {
 }
 
 func TestReviewTransportAdvertisementIsClosedCatalogSet(t *testing.T) {
-	const wantExposed = 4
+	const wantExposed = 5
 
 	exposed := 0
 	for _, agent := range catalog.AllAgents() {
 		t.Run(string(agent.ID), func(t *testing.T) {
 			manifest := MustForAgent(agent.ID)
-			want := agent.ID == model.AgentClaudeCode ||
+			want := agent.ID == model.AgentAntigravity ||
+				agent.ID == model.AgentClaudeCode ||
 				agent.ID == model.AgentOpenCode ||
 				agent.ID == model.AgentCodex ||
 				agent.ID == model.AgentPi

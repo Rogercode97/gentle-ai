@@ -7,6 +7,7 @@ package reviewerprovider
 // bundle verify this list offline before trusting a runtime identity; prompt
 // prose never expands it.
 var registeredRuntimeIdentities = []string{
+	"antigravity",
 	"claude-code",
 	"codex",
 	"opencode",

@@ -19,9 +19,10 @@ import (
 // requires naming it here and classifying it before it can enter the provider
 // boundary, rather than relying on a filename glob that silently grows scope.
 var reviewerAdapterImplementations = map[string]string{
-	"claude_adapter.go": "ClaudeAdapter",
-	"codex_adapter.go":  "CodexAdapter",
-	"pi_adapter.go":     "PiAdapter",
+	"antigravity_adapter.go": "AntigravityAdapter",
+	"claude_adapter.go":      "ClaudeAdapter",
+	"codex_adapter.go":       "CodexAdapter",
+	"pi_adapter.go":          "PiAdapter",
 }
 
 // TestAdapterMinimalityGuard protects the Go-owned review boundary. An adapter

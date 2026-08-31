@@ -151,6 +151,7 @@ var reviewTransportExposureByAgent = func() map[model.AgentID]ContractExposure {
 	for agent := range featureClaimsByAgent {
 		exposure[agent] = ContractExposureDormant
 	}
+	exposure[model.AgentAntigravity] = ContractExposureAdvertised
 	exposure[model.AgentClaudeCode] = ContractExposureAdvertised
 	exposure[model.AgentOpenCode] = ContractExposureAdvertised
 	exposure[model.AgentCodex] = ContractExposureAdvertised
@@ -179,6 +180,7 @@ var immutableReviewExecutorExposureByAgent = func() map[model.AgentID]ContractEx
 	for agent := range featureClaimsByAgent {
 		exposure[agent] = ContractExposureDormant
 	}
+	exposure[model.AgentAntigravity] = ContractExposureAdvertised
 	exposure[model.AgentClaudeCode] = ContractExposureAdvertised
 	exposure[model.AgentOpenCode] = ContractExposureAdvertised
 	exposure[model.AgentCodex] = ContractExposureAdvertised
