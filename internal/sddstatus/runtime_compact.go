@@ -36,6 +36,15 @@ const (
 	// was declared), so the settlement that declaration promises is
 	// structurally impossible and no token may be issued for it.
 	CompactBlockRemediationUnsatisfiable CompactBlockReason = "remediation_unsatisfiable"
+	// CompactBlockUndeclaredUntracked is the settlement-side untracked ruling
+	// block (#3881): the attempt authority is intact and unmutated, and what
+	// refused is the settlement's untracked declaration -- missing for files
+	// the attempt itself created (#3806), stale, naming an ineligible path,
+	// narrowing a begin selection, or offered to a pre-inventory legacy
+	// record. Every exit is a corrected rerun of settle/finish, so a consumer
+	// routing on this reason continues, where authority_failure would tell it
+	// to stop.
+	CompactBlockUndeclaredUntracked CompactBlockReason = "undeclared_untracked"
 )
 
 // CompactAttemptResult is the bounded orchestration projection. RuntimeStatus
@@ -107,6 +116,11 @@ type CompactSettleRequest struct {
 	ProcessEvidence    string
 
 	RemediatesEvidenceRevision string
+
+	// The settle-time untracked declaration, forwarded verbatim to Finish.
+	// Nil means the caller declared nothing.
+	IntendedUntracked          *[]string
+	ExpectedUntrackedInventory string
 }
 
 type CompactHandoffRequest struct {
@@ -188,7 +202,7 @@ func runtimeReadiness(in runtimeReadinessInput) (CompactAttemptResult, bool) {
 // Acquire claims one native attempt without exposing the growing runtime
 // history. The returned token identifies that exact begin record for Settle.
 func (store RuntimeStore) Acquire(ctx context.Context, request CompactAcquireRequest) (CompactAttemptResult, error) {
-	recoverIntendedUntracked := request.Token != "" && request.IntendedUntracked == nil
+	inheritIntendedUntracked := request.IntendedUntracked == nil
 	begin, err := normalizeBeginAttemptRequest(request.BeginAttemptRequest)
 	if err != nil {
 		return CompactAttemptResult{}, err
@@ -207,30 +221,21 @@ func (store RuntimeStore) Acquire(ctx context.Context, request CompactAcquireReq
 			return compactBlockedByUnreadableAuthority(loadErr), nil
 		}
 		begin.ExpectedRevision = record.PreviousRevision
-		// A token is the committed begin record's ownership proof. A tokenized
-		// retry that omitted selection recovers that record's population; an
-		// explicit declaration must still match it exactly below.
-		if recoverIntendedUntracked && request.Token == receipt.Revision && record.Begin != nil {
+		if inheritIntendedUntracked && record.Begin != nil {
 			begin.IntendedUntracked = nil
 			if record.Begin.IntendedUntracked != nil {
 				begin.IntendedUntracked = slices.Clone(*record.Begin.IntendedUntracked)
 			}
 		}
-		if !compactAcquireMatches(record, begin) {
+		if !compactAcquireMatches(record, begin, inheritIntendedUntracked) {
 			return compactBlocked(CompactBlockInvalidContinuation, ""), nil
 		}
 		if request.Token != "" && request.Token != receipt.Revision {
 			return compactBlocked(CompactBlockInvalidContinuation, ""), nil
 		}
-		if _, err := store.Begin(ctx, begin); err != nil {
-			return store.compactMutationFailure(err, false, begin), nil
-		}
-		current, loadErr := store.load()
-		if loadErr != nil {
-			return compactBlockedByUnreadableAuthority(loadErr), nil
-		}
-		return compactAcquireResult(current, begin, receipt.Revision), nil
+		return compactAcquireResult(replay, begin, receipt.Revision), nil
 	}
+	begin = runtimeRescopeSuccessorRequest(replay.Status, begin, inheritIntendedUntracked)
 
 	if result, terminal := runtimeReadiness(runtimeReadinessInput{
 		Status: replay.Status, AttemptTokens: replay.AttemptTokens,
@@ -306,7 +311,8 @@ func (store RuntimeStore) Settle(ctx context.Context, request CompactSettleReque
 		ExpectedRevision: status.Revision, RequestID: request.RequestID, Outcome: request.Outcome,
 		EvidenceRevision: request.EvidenceRevision, Diagnosis: request.Diagnosis,
 		HarnessDisposition: request.HarnessDisposition, CleanupEvidence: request.CleanupEvidence,
-		ProcessEvidence: request.ProcessEvidence,
+		ProcessEvidence: request.ProcessEvidence, IntendedUntracked: request.IntendedUntracked,
+		ExpectedUntrackedInventory: request.ExpectedUntrackedInventory,
 	}
 	failedEvidence, hasFailedEvidence := runtimeChainFailedEvidence(status.Attempts)
 	if request.RemediatesEvidenceRevision != "" && (!hasFailedEvidence || failedEvidence != request.RemediatesEvidenceRevision) {
@@ -354,7 +360,8 @@ func normalizeCompactSettleRequest(request CompactSettleRequest) error {
 		ExpectedRevision: request.Token, RequestID: request.RequestID, Outcome: request.Outcome,
 		EvidenceRevision: request.EvidenceRevision, Diagnosis: request.Diagnosis,
 		HarnessDisposition: request.HarnessDisposition, CleanupEvidence: request.CleanupEvidence,
-		ProcessEvidence: request.ProcessEvidence,
+		ProcessEvidence: request.ProcessEvidence, IntendedUntracked: request.IntendedUntracked,
+		ExpectedUntrackedInventory: request.ExpectedUntrackedInventory,
 	})
 	if err != nil {
 		return err
@@ -365,11 +372,14 @@ func normalizeCompactSettleRequest(request CompactSettleRequest) error {
 	return nil
 }
 
-func compactAcquireMatches(record runtimeRecord, request BeginAttemptRequest) bool {
+func compactAcquireMatches(record runtimeRecord, request BeginAttemptRequest, inheritsIntendedUntracked bool) bool {
 	if (record.Operation != runtimeOperationBegin && record.Operation != runtimeOperationAdvance) || record.Begin == nil {
 		return false
 	}
 	event := record.Begin
+	if !inheritsIntendedUntracked && event.IntendedUntracked == nil {
+		return false
+	}
 	var intendedUntracked []string
 	if event.IntendedUntracked != nil {
 		intendedUntracked = *event.IntendedUntracked
@@ -389,13 +399,35 @@ func compactSettleReplayRequest(replay runtimeReplay, record runtimeRecord, requ
 		request.Outcome == event.Outcome && request.EvidenceRevision == event.EvidenceRevision &&
 		request.Diagnosis == event.Diagnosis && request.HarnessDisposition == event.HarnessDisposition &&
 		request.CleanupEvidence == event.CleanupEvidence && request.ProcessEvidence == event.ProcessEvidence &&
-		request.RemediatesEvidenceRevision == event.RemediatesEvidenceRevision
+		request.RemediatesEvidenceRevision == event.RemediatesEvidenceRevision &&
+		request.ExpectedUntrackedInventory == event.DeclaredUntrackedInventory &&
+		compactSettleDeclarationMatches(request.IntendedUntracked, event)
 	return FinishAttemptRequest{
 		ExpectedRevision: record.PreviousRevision, RequestID: record.RequestID, Outcome: event.Outcome,
 		EvidenceRevision: event.EvidenceRevision, Diagnosis: event.Diagnosis,
 		HarnessDisposition: event.HarnessDisposition, CleanupEvidence: event.CleanupEvidence,
 		ProcessEvidence: event.ProcessEvidence, RemediatesEvidenceRevision: event.RemediatesEvidenceRevision,
+		IntendedUntracked: replayedSettleDeclaration(event), ExpectedUntrackedInventory: event.DeclaredUntrackedInventory,
 	}, matches
+}
+
+// replayedSettleDeclaration recovers the selection the original request
+// carried. The event always records the selection the settlement used, but the
+// request carried one only when the caller declared, which the recorded digest
+// is what says.
+func replayedSettleDeclaration(event *runtimeFinishEvent) *[]string {
+	if event.DeclaredUntrackedInventory == "" {
+		return nil
+	}
+	return event.IntendedUntracked
+}
+
+func compactSettleDeclarationMatches(declared *[]string, event *runtimeFinishEvent) bool {
+	replayed := replayedSettleDeclaration(event)
+	if declared == nil || replayed == nil {
+		return declared == nil && replayed == nil
+	}
+	return slices.Equal(*declared, *replayed)
 }
 
 // compactAcquireResult reconciles a committed begin whose publication the
@@ -459,6 +491,13 @@ func (store RuntimeStore) compactMutationFailure(err error, settle bool, begin B
 	case errors.Is(err, ErrRuntimeRevisionConflict), errors.Is(err, ErrRuntimeConcurrentUpdate),
 		errors.Is(err, ErrRuntimeRequestConflict), errors.Is(err, ErrRuntimeNoActiveAttempt):
 		reason = CompactBlockInvalidContinuation
+	// ErrRuntimeUndeclaredUntracked is the sentinel behind every
+	// settlementUntrackedSelection refusal (#3881): the settlement needs an
+	// untracked ruling the request does not carry. Caller-actionable -- the
+	// wrapped text names the exact rerun -- so it must not report as
+	// authority_failure, which the contract reserves for what its name says.
+	case errors.Is(err, ErrRuntimeUndeclaredUntracked):
+		reason = CompactBlockUndeclaredUntracked
 	// ErrRuntimeWorktreeMismatch is the sentinel behind
 	// runtimeWorktreeMismatchRefusal (#2296 part 1): Finish is running from a
 	// different linked worktree than the one Begin recorded. Left

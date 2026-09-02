@@ -58,8 +58,7 @@ func TestReviewProviderArtifactV20ContractsArePinned(t *testing.T) {
 		"fixtures/consent.fixture.json":      "203cc96d5c29ba0f27b5c4db04c2e88566e0a923d3a0cdb317f78d9065349075",
 		"fixtures/status.fixture.json":       "846377e06df2cae3587c4258ea75fe1ec1b51f08d01f1d498378c3bf13e93921",
 		"schemas/capabilities.schema.json":   "df1d1d36bfb8b7816d3eb1c44c1350b4a36e27ac321922963add9dd25ed5a1a2",
-		"schemas/consent.schema.json":        "b2b4465338497f11927de91cb2e5da12b6cb4a1039afe05aebe1abbf53b21858",
-		"schemas/status.schema.json":         "29c50408baa959e592518cd7cce920f12af7dd8c6e4898166c2b4a59611e463c",
+		"schemas/status.schema.json":         "6ad34d65149d73c7212d33d19846f142255b81dd8f577056dae91b89b7abb4f9",
 	}
 	for name, expected := range want {
 		payload, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(name)))
@@ -92,7 +91,7 @@ func TestReviewProviderArtifactV21ContractsArePinned(t *testing.T) {
 		// the emitter legitimately publishes once the relay handshake is
 		// declared. Deliberate, not drift.
 		"schemas/consent-v3.schema.json": "f56b1809c1bff21713795ef37a095c6ecfdbbb3cf928bcf604b8d5f33be3dea5",
-		"schemas/status.schema.json":     "29c50408baa959e592518cd7cce920f12af7dd8c6e4898166c2b4a59611e463c",
+		"schemas/status.schema.json":     "6ad34d65149d73c7212d33d19846f142255b81dd8f577056dae91b89b7abb4f9",
 	}
 	for name, expected := range want {
 		payload, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(name)))
@@ -123,7 +122,32 @@ func TestReviewProviderArtifactV25StatusContractsArePinned(t *testing.T) {
 		// input with a capture-result submission descriptor, which the
 		// submission oneOf and the no-submission allOf rule both rejected.
 		// Deliberate, not drift.
-		"schemas/status-v5.schema.json": "6b5ba6512c98496b26b24e228f7ce4f8fba31415f54549f046b51c0d45ad9ea5",
+		"schemas/start.schema.json":     "27954ad34319719a68f90768c90f39254d94c62cf7f8ea90525ec4e2dbafd182",
+		"schemas/status-v5.schema.json": "6bba1eb04f406bc84e68314b43a435d53a345724ccf7f003894ce1bf58303bd4",
+	}
+	for name, expected := range want {
+		payload, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(name)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		digest := sha256.Sum256(payload)
+		if actual := hex.EncodeToString(digest[:]); actual != expected {
+			t.Fatalf("%s digest = %s, want %s", name, actual, expected)
+		}
+	}
+}
+
+// TestReviewProviderArtifactV23StartContractsArePinned pins the artifacts the
+// start/v4 continuation work first published (issue #3894): the start-v4
+// envelope with its provider-issued reviewing STATUS re-entry, and the v2.3
+// capabilities advertisement that names it.
+func TestReviewProviderArtifactV23StartContractsArePinned(t *testing.T) {
+	root := filepath.Join("..", "..", "contracts", "review-integration", "v2")
+	want := map[string]string{
+		"fixtures/capabilities-v2.3.fixture.json": "ed5fb324791eec28287c621f19dffd69323120f61ce537e7b329fc018a29fe42",
+		"fixtures/start-v4.fixture.json":          "1e91073e93ba93c433da7459bd984a74993484ba10d5bba069d7d436f1e8fb12",
+		"schemas/capabilities-v2.3.schema.json":   "606efa4b691605b0e7b668c616d48712a2a925c819244ebe2bc63d9885658bb3",
+		"schemas/start-v4.schema.json":            "770c6a7e40a62a945d1134cba933cfd811f4c5e6ab407a36a26ba56508bc00e4",
 	}
 	for name, expected := range want {
 		payload, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(name)))
@@ -145,8 +169,12 @@ func TestReviewProviderArtifactV25StatusContractsArePinned(t *testing.T) {
 func TestReviewProviderArtifactConformanceSchemasArePinned(t *testing.T) {
 	root := filepath.Join("..", "..", "contracts", "review-integration", "v2")
 	want := map[string]string{
-		"schemas/gate-result.schema.json":            "afe5e2a030fae9949305811bcac0a6dbc8b4f28802fa61d1e31e58e895f9fcae",
-		"schemas/last-event-closure.schema.json":     "612531204afa5941e4927c38e868c720a4519fe4b9a5a4ffd29f021dc053001d",
+		"schemas/gate-result.schema.json":        "afe5e2a030fae9949305811bcac0a6dbc8b4f28802fa61d1e31e58e895f9fcae",
+		"schemas/last-event-closure.schema.json": "9059651e39278f6932929392f4dacc3911d65fe3769171e2401b87df55da9030",
+		// issue #3894: start/v4 publishes the reviewing status continuation, so
+		// transition-execution gains the start_status_execution definition it
+		// references. Deliberate, not drift.
+		"schemas/transition-execution.schema.json":   "1294235c146a1cd61043b194fff65cc3fabc486dd76241463609b4c9333d05d0",
 		"schemas/opencode-provider-role.schema.json": "c6b9f216f89c044f8e844b55e7200114850cfbc16642bca0677f30a399d8aa9b",
 	}
 	for name, expected := range want {
@@ -259,13 +287,15 @@ func TestReviewProviderArtifactSchemasAreStrictAndBound(t *testing.T) {
 	}{
 		{name: "artifact-subject.schema.json", id: "https://gentle-ai.dev/contracts/review-integration/v2/schemas/artifact-subject.schema.json"},
 		{name: "admitted-result.schema.json", id: "https://gentle-ai.dev/contracts/review-integration/v2/schemas/admitted-result.schema.json"},
-		{name: "start.schema.json", id: ReviewIntegrationStartSchemaID},
+		{name: "start.schema.json", id: ReviewIntegrationStartSchemaIDV3},
+		{name: "start-v4.schema.json", id: ReviewIntegrationStartSchemaIDV4},
 		{name: "status.schema.json", id: ReviewIntegrationStatusSchemaIDV3},
 		{name: "status-v4.schema.json", id: ReviewIntegrationStatusSchemaIDV4},
 		{name: "status-v5.schema.json", id: ReviewIntegrationStatusSchemaIDV5},
 		{name: "capabilities.schema.json", id: ReviewIntegrationCapabilitiesSchemaIDV2},
 		{name: "capabilities-v2.1.schema.json", id: ReviewIntegrationCapabilitiesSchemaIDV21},
 		{name: "capabilities-v2.2.schema.json", id: ReviewIntegrationCapabilitiesSchemaIDV22},
+		{name: "capabilities-v2.3.schema.json", id: ReviewIntegrationCapabilitiesSchemaIDV23},
 		{name: "consent.schema.json", id: ReviewIntegrationConsentSchemaIDV2},
 		{name: "consent-v3.schema.json", id: ReviewIntegrationConsentSchemaIDV3},
 		{name: "failure.schema.json", id: ReviewIntegrationFailureSchemaIDV2},
@@ -315,6 +345,21 @@ func TestReviewProviderArtifactV2FixturesValidate(t *testing.T) {
 	}
 	if err := start.Validate(); err != nil {
 		t.Fatalf("v2 START fixture: %v", err)
+	}
+	startV4Payload, err := os.ReadFile(filepath.Join(root, "start-v4.fixture.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var startV4 ReviewIntegrationStartResult
+	if err := json.Unmarshal(startV4Payload, &startV4); err != nil {
+		t.Fatal(err)
+	}
+	if err := startV4.Validate(); err != nil {
+		t.Fatalf("v4 START fixture: %v", err)
+	}
+	if startV4.NextTransition == nil || startV4.NextTransition.Execute == nil ||
+		startV4.NextTransition.Execute.Operation != "review.status" {
+		t.Fatalf("v4 START fixture continuation = %#v", startV4.NextTransition)
 	}
 	statusPayload, err := os.ReadFile(filepath.Join(root, "status.fixture.json"))
 	if err != nil {

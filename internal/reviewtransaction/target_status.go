@@ -216,6 +216,10 @@ func assessTargetStatusSnapshot(ctx context.Context, repo string, request Target
 			continue
 		}
 		state := candidate.compact.State
+		if request.LineageID == "" && (compactRejectedTargetedValidatorTerminalForChangedTarget(state, live) ||
+			compactHistoricalFailedValidator(state) && compactEscalatedRecoveryTargetChanged(state.CurrentSnapshot, live)) {
+			continue
+		}
 		if request.LineageID != "" && request.Target.Kind == TargetCurrentChanges && request.Target.Projection != ProjectionStaged &&
 			!compactLiveTargetMatchesValidatedSnapshot(state, live, true) {
 			eligible, pendingSlots, eligibilityErr := explicitReviewingCompactCandidate(ctx, repo, candidate)
@@ -386,6 +390,26 @@ func assessTargetStatusSnapshot(ctx context.Context, repo string, request Target
 	}
 }
 
+// compactRejectedTargetedValidatorTerminalForChangedTarget recognizes only a
+// canonical evidence-bearing rejected validator terminal. Rebuild verifies the
+// admitted request/evidence binding; absent or malformed evidence stays in the
+// ordinary escalation path instead of being excluded from status candidates.
+func compactRejectedTargetedValidatorTerminalForChangedTarget(state CompactState, live Snapshot) bool {
+	if !compactEscalatedRecoveryTargetChanged(state.CurrentSnapshot, live) {
+		return false
+	}
+	request, err := RebuildAdmittedTargetedValidationRequest(state, state.CapturePhaseRevision)
+	if err != nil {
+		return false
+	}
+	value, found := state.AdmittedRoleResult(CompactRoleTargetedValidator, state.CapturePhaseRevision, request.CorrectionTargetIdentity, request.RequestHash)
+	if !found {
+		return false
+	}
+	validator, err := decodeCompactAdmittedTargetedValidatorValue(value)
+	return err == nil && validator.Outcome == "failed"
+}
+
 // explicitReviewingCompactCandidate admits a drifted reviewing authority only
 // after its immutable review inputs and every canonical result slot are safe.
 // It also reports whether a reviewer result remains to be captured.
@@ -401,24 +425,24 @@ func explicitReviewingCompactCandidate(ctx context.Context, repo string, candida
 	if err != nil || superseded {
 		return false, false, err
 	}
-	store, err := CompactAuthoritativeStore(ctx, repo, state.LineageID)
-	if err != nil {
-		return false, false, err
-	}
 	pending := false
 	for order, lens := range state.SelectedLenses {
-		slot, err := ReadCompactReviewerResultSlot(store.Dir, order, lens)
-		if err != nil {
-			return false, false, err
+		captured := false
+		for _, entry := range state.AdmittedRoleResults {
+			captured = !state.IsAccountingOnlyAdmittedRoleResult(entry) && entry.Role == CompactRoleLens && entry.CapturePhaseRevision == state.CapturePhaseRevision &&
+				entry.TargetIdentity == state.InitialSnapshot.Identity && entry.SelectedOrder == order && entry.Lens == lens
+			if captured {
+				break
+			}
 		}
-		pending = pending || !slot.Occupied
+		pending = pending || !captured
 	}
 	frozen, err := (SnapshotBuilder{Repo: repo}).FrozenCandidateContext(ctx, state.InitialSnapshot)
 	if err != nil {
 		return false, false, err
 	}
 	for order, lens := range state.SelectedLenses {
-		if _, err := NewArtifactSubject(state, candidate.compact.Revision, frozen, lens, order, ""); err != nil {
+		if _, err := NewArtifactSubject(state, state.CapturePhaseRevision, frozen, lens, order, ""); err != nil {
 			return false, false, err
 		}
 	}

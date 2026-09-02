@@ -108,11 +108,7 @@ Regardless of the language (English, Spanish, etc.) or phrasing used by the user
 
 ### Language Domain Contract
 
-- The active persona controls direct user/orchestrator conversation only. Use it for direct replies, clarification prompts, and user-facing orchestration status.
-- Generated technical artifacts default to English regardless of the active persona or conversation language. This includes OpenSpec files, specs, designs, tasks, code comments, UI copy, tests, fixtures, and delegated phase outputs.
-- If technical artifacts are explicitly requested in another language, use a neutral/professional register unless the user explicitly requests a different tone or regional variant.
-- Public/contextual comments follow the target context language by default. Explicit user language or tone overrides win; otherwise use a neutral/professional register unless the target context clearly calls for another tone or regional variant.
-- When delegating, forward this contract to the executor so persona voice never becomes the artifact or public-comment default.
+{{GENTLE_AI_SDD_SECTION:Language Domain Contract}}
 
 ### Delegation Rules
 
@@ -265,40 +261,8 @@ Meta-commands (type directly — orchestrator handles them, will not appear in a
 
 ### Native SDD Dispatcher Guard
 
-Apply this dispatcher guard only after satisfying `SDD Session Preflight and Execution Mode (HARD GATE)` below. Before routing, continuing, applying, verifying, or archiving an SDD change, **first determine this session's artifact store** from the cached Session Preflight / Artifact Store Mode choice. If the store is not yet established, resolve it before continuing — check `sdd-init/{project}` in Engram and treat the change as `engram`-backed when no OpenSpec store was selected. **Then scope the native dispatcher by artifact store.** The native dispatcher (`gentle-ai sdd-continue [change] --cwd <repo>` or `gentle-ai sdd-status [change] --cwd <repo> --json --instructions`) reads ONLY OpenSpec file artifacts under `openspec/changes/` and always emits `artifactStore: openspec`; it cannot observe Engram-backed changes. **When the session artifact store is `engram`, do NOT invoke the dispatcher at all** — it is blind to the change and its `blocked`, `Active OpenSpec change not found`, or `nextRecommended: sdd-new` output is meaningless; resolve status entirely from Engram (`mem_search` + `mem_get_observation` on the change's topic keys such as `sdd/{change-name}/tasks`) using the manual status schema. Only when the session artifact store is `openspec` or `hybrid` should you run the dispatcher when `gentle-ai` is available and treat its native status JSON as authoritative over prompt inference. Route only by `nextRecommended` and dependency states; never infer from free text. If `blockedReasons` is non-empty, do not proceed to apply, archive, or terminal work. If `nextRecommended` is `verify`, verification/remediation may run only to refresh evidence; if `nextRecommended` is `resolve-blockers`, report `blockedReasons` and stop; if `nextRecommended` is a planning token (`propose`, `spec`, `design`, or `tasks`), launch the corresponding planning phase. If the binary is unavailable, fall back to the existing prompt contract and manual status schema.
+{{GENTLE_AI_SDD_SECTION:Native SDD Dispatcher Guard}}
 
-### SDD Session Preflight and Execution Mode (HARD GATE)
-
-Before executing ANY `/sdd-*` command or natural-language SDD request, ensure this session has an explicit `SDD Session Preflight` decision block and cached execution mode.
-
-This applies to `/sdd-new`, `/sdd-ff`, `/sdd-continue`, `/sdd-explore`, `/sdd-status`, `/sdd-apply`, `/sdd-verify`, `/sdd-archive`, and natural-language equivalents such as "use SDD to add dark mode" or "do it with SDD".
-
-If the session preflight or execution mode is missing, ASK first, then STOP and wait for the user's answer before invoking any dynamic subagent. Existing `openspec/config.yaml`, existing SDD artifacts, previous `sdd-init` results, installed SDD assets, or the requested command text do NOT satisfy this gate.
-
-Required preflight choices:
-
-1. **Execution mode**: `interactive` or `auto` / `automatic`.
-2. **Artifact store**: `engram`, `openspec`, `hybrid` / `both`, or `none` when no persistent backend is available.
-3. **Delivery strategy**: `ask-on-risk`, `auto-chain`, `single-pr`, or `exception-ok`.
-4. **Review budget / chained PR policy**: reviewer-burden line budget and chain strategy when chaining is selected.
-
-Only after the choices are collected may the orchestrator run the SDD init guard or invoke the requested dynamic phase subagent. Cache the choices for the session and include the relevant values in every dynamic subagent context.
-
-Interactive mode is a hard pause gate, not summary-only wording. In **Interactive** mode, after each phase subagent returns:
-
-1. Summarize the completed phase: `status`, artifact references, key decisions, risks, and `next_recommended`.
-2. List what the next phase would do if the user continues.
-3. Ask whether the user wants to continue, adjust, or stop.
-4. STOP and wait for user input before invoking the next dynamic subagent.
-5. If the user asks to adjust, incorporate the feedback into the next phase context or rerun the appropriate phase instead of advancing blindly.
-
-Interactive approval is phase-scoped. Words like `continue`, `dale`, or `go on` approve only the immediate next phase, not the rest of the SDD pipeline.
-
-Do NOT run `/sdd-ff` or dynamic subagent chains back-to-back unless the cached execution mode is `auto` / `automatic`. In `interactive` mode, `/sdd-ff` runs only the next planning phase, reports it, and waits before proceeding to spec, design, tasks, apply, verify, or archive.
-
-Before the `sdd-propose` phase in interactive mode, run a product/proposal question round before invoking `sdd-propose`. Explain that the questions improve the PRD/proposal by uncovering business understanding, business rules, implications, impact, edge cases, and product tradeoffs. Prefer 3–5 concrete product questions, summarize the resulting assumptions, then ask whether to continue, correct the assumptions, or run another question round. Cover business/product/PRD decisions: business problem, target users and situations, business rules, product outcome, current-state gap, implications and impact, edge cases, decision gaps, first-slice scope boundaries, non-goals, product constraints, and business tradeoffs. Do not ask about test commands, PR shape, changed-line budget, or other harness mechanics at proposal time unless the user explicitly asks to discuss delivery.
-
-Technical artifacts and prompts remain English. The active persona controls direct user conversation only; generated SDD artifacts, dynamic subagent prompts, task packets, specs, designs, tests, and code comments default to English unless the user explicitly requests another artifact language.
 
 ### SDD Init Guard (MANDATORY)
 
@@ -368,12 +332,7 @@ The gatekeeper runs in addition to the Review Workload Guard and the Mandatory D
 
 ### Native Runtime Attempt Authority (MANDATORY)
 
-Use the provider-owned Git-common-dir runtime ledger for every runtime-bearing `sdd-apply`, `sdd-verify`, or remediation continuation. It is the single attempt/budget authority for both OpenSpec and Engram; never persist caller-authored counters in OpenSpec files, Engram topics, prompts, or Pi state.
-
-1. Before an actor or harness launch, call `gentle-ai sdd-attempt acquire --cwd <repo> --change <change> --request-id <id> --work-unit <label> --evidence-goal <goal> --max-attempts <count> --max-changed-lines <count>`.
-2. Launch only when acquire returns `state: proceed`, and retain its opaque `token`. `blocked` or `complete` stops the launch.
-3. After the external run, call `gentle-ai sdd-attempt settle --cwd <repo> --change <change> --token <token> --request-id <settle-id> ...` with a request ID distinct from the acquire operation's request ID, outcome, and bounded evidence. Reuse each operation's own ID only for its idempotent replay. Settle derives native binding/remediation inputs; pass `--successor-lineage` only for a distinct approved successor, otherwise the bound lineage remains its own successor.
-4. Route only from settle's `proceed`, `blocked`, or `complete` state. Full `status|begin|finish|reset` operations are diagnostic/compatibility surfaces; reset requires an explicit maintainer scope decision and is never automatic.
+{{GENTLE_AI_SDD_SECTION:Native Runtime Attempt Authority (MANDATORY)}}
 
 ### Artifact Store Mode
 
@@ -567,45 +526,4 @@ DAG state is tracked in Engram under `sdd/{change-name}/state`. Update it after 
 
 ## Recovery Rule
 
-- `engram` → `mem_search(...)` → `mem_get_observation(...)`
-- `openspec` → read `openspec/changes/*/state.yaml`
-- `none` → state not persisted — explain to user
-
-### 4R & Judgment Day Review Execution Protocol (MANDATORY)
-
-To guarantee software quality and resilience before archiving or completing any SDD change:
-
-1. **4R Bounded Review Execution**:
-   - Immediately after `sdd-verify` completes successfully (and for non-trivial changes), the orchestrator MUST invoke the 4R review lens subagents (`review-*`).
-   - Invoke them in parallel using `invoke_subagent`.
-   - If findings are reported by any lens, invoke `review-refuter` to validate findings before logging to the review ledger.
-
-2. **Judgment Day (Blind Dual Review)**:
-   - For changes larger than 400 lines, security-sensitive edits, or hot-path architecture changes, activate the Judgment Day protocol.
-   - Invoke `jd-judge-a` and `jd-judge-b` concurrently via `invoke_subagent`.
-   - Compare their independent verdicts; if a discrepancy exists, invoke `review-refuter` to arbitrate the final ledger entries.
-
-3. **Archive Gate**:
-   - The orchestrator MUST NOT invoke `sdd-archive` or mark a change complete until the 4R or Judgment Day review has completed and all critical findings are resolved.
-
-### Lifecycle State Auto-Detection & Intent Mapping (MANDATORY)
-
-To prevent getting stuck or losing context during multi-phase workflows:
-
-1. **State Inspection**:
-   - At the beginning of any turn or natural language request, the orchestrator MUST check the current change state (via Engram `mem_search`, OpenSpec state, or `.agents/`).
-   - Identify the exact active stage:
-     - `uninitialized` → Suggest/invoke `sdd-init` or `sdd-onboard`.
-     - `explored` → Proceed to `sdd-propose`.
-     - `planning` (proposal/spec/design exists) → Complete `sdd-tasks`.
-     - `ready_to_apply` → Propose and wait for user approval, then invoke `sdd-apply`.
-     - `applied` → Invoke `sdd-verify`.
-     - `verified` → Invoke 4R lenses (`review-*`) or Judgment Day (`jd-judge-*`).
-     - `reviewed` → Invoke `sdd-archive`.
-
-2. **Linguistic Intent Mapping**:
-   - Map vague or natural language user prompts directly to the missing step based on the detected state:
-     - "sigamos" / "avanzá" / "siguiente paso" → Invoke the next sequential phase for the current state.
-     - "revisá" / "chequeá" → Invoke `sdd-explore` (if planning) or 4R `review-*` (if post-verify).
-     - "probá" / "testeá" → Invoke `sdd-verify`.
-     - "cerrá" / "terminá" → Invoke `sdd-archive`.
+{{GENTLE_AI_SDD_SECTION:Recovery Rule}}
