@@ -110,6 +110,17 @@ Regardless of the language (English, Spanish, etc.) or phrasing used by the user
 
 {{GENTLE_AI_SDD_SECTION:Language Domain Contract}}
 
+
+### Dynamic Subagent Execution Strategy (MANDATORY)
+
+Do not execute SDD phase work in the orchestrator thread except for trivial routing, artifact lookup, user clarification, and synthesis. Phase subagents own phase-specific reading, writing, testing, and artifact production. The parent stays thin; phase work runs in dynamic subagent context.
+
+All phase-execution commands MUST be executed by delegating to the corresponding subagent (`sdd-explore`, `sdd-apply`, `sdd-verify`, etc.) directly via `invoke_subagent`.
+
+- **Lean SDD (Fast-Path)**: for 2–3 bounded files within a single domain with zero architectural ambiguity. Runs `sdd-explore` (targeted mapping with mandatory Engram persistence) → `sdd-apply` (strict TDD) → `sdd-verify`, skipping proposal, spec, and design ceremonies.
+- **Full SDD**: when a change spans multiple domains/layers (cross-stack), touches core contracts/architecture, or introduces architectural ambiguity. Runs the full phased lifecycle (`sdd-explore` → `sdd-propose` → `sdd-spec` → `sdd-design` → `sdd-tasks` → `sdd-apply` → `sdd-verify` → `sdd-archive`).
+- **Mandatory Engram Exploration Persistence**: In both Lean and Full SDD, `sdd-explore` MUST be executed first and MUST persist its findings, symbol mappings, and architectural insights into Engram (`mem_save` under topic key `sdd/{change-name}/explore`) before proceeding to code modification (`sdd-apply`).
+
 ### Delegation Rules
 
 These rules select execution topology, not the implementation method. Crossing a threshold selects **delegated direct** work; it never selects SDD, creates SDD state, or invokes an `sdd-*` phase. Implementation runs as **direct inline**, **delegated direct**, or **optional SDD**; size, file count, or risk alone never selects SDD. SDD phase workers are reserved for an explicit SDD request or a proposal the user accepted.
@@ -120,7 +131,7 @@ These rules select execution topology, not the implementation method. Crossing a
 | Read to explore/understand (4+ files) | — | ✅ one narrow mapper |
 | Read as preparation for writing | — | ✅ together with the write |
 | Write one mechanical, already-understood file | ✅ | — |
-| Write 2+ non-trivial files | — | ✅ one writer |
+| Write 2+ non-trivial files | — | ✅ route via Lean/Full SDD |
 | Bash for state (`git`, `gh`) | ✅ | — |
 | Tests, builds, installs, or native review actions | allowed as a bounded action | ✅ fresh per-action worker without changing route |
 
@@ -284,10 +295,10 @@ Do NOT skip this check. Do not ask the user about init itself once preflight is 
 
 ### Execution Mode
 
-This is collected by `SDD Session Preflight`. If it is missing, enforce `SDD Session Preflight and Execution Mode (HARD GATE)` before any phase work. When the user invokes `/sdd-new`, `/sdd-ff`, or `/sdd-continue` (or an equivalent natural-language request, e.g. "create an SDD for X" / "do SDD for X") for the first time in a session, ASK which execution mode they prefer:
+This is collected by `SDD Session Preflight`. If it is missing, enforce `SDD Session Preflight and Execution Mode (HARD GATE)` before any phase work. When the user invokes `/sdd-new`, `/sdd-ff`, or `/sdd-continue` (or an equivalent natural-language request, e.g. "create an SDD for X" / "do SDD for X") for the first time in a session, present workflow selection (Interactive mode vs Automatic mode) using the native `ask_question` tool when running in an interactive session (or use the plain chat or terminal fallback if unavailable):
 
 - **Automatic** (`auto` / `automatic`): Run dependency-ready phases sequentially without asking between phases, while still running the automatic gatekeeper validation after every phase before invoking the next dynamic subagent. The user only sees an interruption when the gatekeeper catches a real problem, a review workload guard requires a delivery decision, or before transitioning to the `sdd-apply` phase. **CRITICAL GATE**: The transition to the `sdd-apply` (implementation) phase is NEVER automatic; the orchestrator MUST pause, present the proposed tasks/changes, and obtain explicit user approval before launching `sdd-apply` in all modes. You **MUST NOT** call `define_subagent` or `invoke_subagent` for `sdd-apply` in the same turn that you ask for approval; you **MUST** end your turn and wait for the user's explicit response in the chat.
-- **Interactive** (`interactive`): The default mode. The orchestrator MUST pause after every dynamic phase subagent returns (including proposal, spec, design, and tasks). It MUST summarize the phase, ask whether to continue/adjust/stop, and STOP to wait for the user's explicit confirmation/greenlight before invoking the next dynamic subagent. It must only bypass intermediate pauses if the user explicitly requested `auto` mode or explicitly requested to only be notified before applying changes.
+- **Interactive** (`interactive`): The default mode. The orchestrator MUST pause after every dynamic phase subagent returns (including proposal, spec, design, and tasks). It MUST summarize the phase, ask whether to continue/adjust/stop, and STOP to wait for the user's explicit confirmation/greenlight before invoking the next dynamic subagent. When running in an interactive session, present the proceed/adjust/stop options using the native `ask_question` tool when representable; otherwise use the complete plain chat or terminal fallback and STOP. It must only bypass intermediate pauses if the user explicitly requested `auto` mode or explicitly requested to only be notified before applying changes.
 
 If the user doesn't specify, default to **Automatic**. After scope approval, expect zero further prompts on the happy path and at most one actionable prompt per recoverable failure; the gatekeeper summarizes phase progress instead of interrupting except on a second consecutive gate failure or a genuine scope/product decision.
 

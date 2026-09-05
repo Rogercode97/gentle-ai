@@ -114,6 +114,18 @@ var vscodeCopilotOverlayJSON = []byte(`{
 }
 `)
 
+// antigravityOverlayJSON allows essential commands for the Termux CLI environment.
+var antigravityOverlayJSON = []byte(`{
+  "permissions": {
+    "allow": [
+      "command(gentle-ai)",
+      "command(codegraph)",
+      "command(git)"
+    ]
+  }
+}
+`)
+
 // agentOverlay returns the correct permission overlay for the given agent,
 // or nil if the agent does not support permission injection via settings.json.
 func agentOverlay(id model.AgentID) []byte {
@@ -127,9 +139,8 @@ func agentOverlay(id model.AgentID) []byte {
 	case model.AgentQwenCode:
 		return qwenCodeOverlayJSON
 	case model.AgentAntigravity:
-		// Antigravity manages permissions via IDE UI (Artifact Review Policy /
-		// Terminal Command Auto Execution). No injectable settings.json schema.
-		return nil
+		// In Termux Edition, Antigravity relies on CLI settings.json for permissions
+		return antigravityOverlayJSON
 	case model.AgentVSCodeCopilot:
 		return vscodeCopilotOverlayJSON
 	case model.AgentCursor:

@@ -359,10 +359,10 @@ func TestInjectCursorSkipsPermissions(t *testing.T) {
 	}
 }
 
-func TestInjectAntigravitySkipsPermissions(t *testing.T) {
+func TestInjectAntigravityTermuxPermissions(t *testing.T) {
 	overlay := agentOverlay(model.AgentAntigravity)
-	if overlay != nil {
-		t.Errorf("expected nil overlay for Antigravity, got %s", overlay)
+	if overlay == nil {
+		t.Errorf("expected Termux overlay for Antigravity, got nil")
 	}
 }
 
