@@ -11,6 +11,7 @@ import (
 	"github.com/gentleman-programming/gentle-ai/v2/internal/model"
 	"github.com/gentleman-programming/gentle-ai/v2/internal/reviewtransaction"
 	"github.com/gentleman-programming/gentle-ai/v2/internal/state"
+	"github.com/gentleman-programming/gentle-ai/v2/internal/statecoord"
 )
 
 func TestPersistSyncManagedAssetStateReReadsLatestStateAfterLockContention(t *testing.T) {
@@ -105,7 +106,7 @@ func TestInstallStateLockAcceptsSymlinkedHome(t *testing.T) {
 
 func mustInstallStateLockPath(t *testing.T, home string) string {
 	t.Helper()
-	lockPath, err := installStateLockPath(home)
+	lockPath, err := statecoord.LockPath(home)
 	if err != nil {
 		t.Fatalf("install state lock path: %v", err)
 	}
@@ -118,6 +119,10 @@ func TestInstallStateLockPathIsStableAcrossStateDirectoryCreation(t *testing.T) 
 		t.Skip("directory symlinks need elevated privileges on Windows")
 	}
 	real := t.TempDir()
+	resolvedReal, err := filepath.EvalSymlinks(real)
+	if err != nil {
+		t.Fatal(err)
+	}
 	link := filepath.Join(t.TempDir(), "home-link")
 	if err := os.Symlink(real, link); err != nil {
 		t.Fatal(err)
@@ -126,10 +131,10 @@ func TestInstallStateLockPathIsStableAcrossStateDirectoryCreation(t *testing.T) 
 	if err := os.MkdirAll(filepath.Dir(state.Path(real)), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if after := mustInstallStateLockPath(t, link); after != before || after != state.Path(real)+".lock" {
+	if after := mustInstallStateLockPath(t, link); after != before || after != state.Path(resolvedReal)+".lock" {
 		t.Fatalf("lock path depends on filesystem state: before %s, after %s", before, after)
 	}
-	if _, err := installStateLockPath(filepath.Join(real, "missing-home")); err == nil {
+	if _, err := statecoord.LockPath(filepath.Join(real, "missing-home")); err == nil {
 		t.Fatal("a home that does not resolve must fail closed instead of guessing a lock path")
 	}
 }

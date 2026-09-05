@@ -22,6 +22,7 @@ import (
 	windsurfagent "github.com/gentleman-programming/gentle-ai/v2/internal/agents/windsurf"
 	"github.com/gentleman-programming/gentle-ai/v2/internal/assets"
 	"github.com/gentleman-programming/gentle-ai/v2/internal/components/agentguidance"
+	"github.com/gentleman-programming/gentle-ai/v2/internal/components/filemerge"
 	"github.com/gentleman-programming/gentle-ai/v2/internal/model"
 	opencodemodel "github.com/gentleman-programming/gentle-ai/v2/internal/opencode"
 	// agents/cursor, agents/gemini, agents/vscode used via agents.NewAdapter()
@@ -429,7 +430,7 @@ func TestInjectClaudeRetiresUnprefixedCommands(t *testing.T) {
 	}
 }
 
-func TestInjectClaudeCustomModelAssignments(t *testing.T) {
+func TestInjectClaudeCustomModelAssignmentsApplyToEveryDelegation(t *testing.T) {
 	home := t.TempDir()
 
 	opts := InjectOptions{ClaudeModelAssignments: map[string]model.ClaudeModelAlias{
@@ -446,49 +447,66 @@ func TestInjectClaudeCustomModelAssignments(t *testing.T) {
 		t.Fatal("Inject(claude, custom assignments) changed = false")
 	}
 
-	content, err := os.ReadFile(filepath.Join(home, ".claude", "skills", "_shared", "sdd-orchestrator-workflow.md"))
+	promptContent, err := os.ReadFile(filepath.Join(home, ".claude", "CLAUDE.md"))
+	if err != nil {
+		t.Fatalf("ReadFile(CLAUDE.md) error = %v", err)
+	}
+	prompt := string(promptContent)
+	for _, want := range []string{
+		"<!-- gentle-ai:sdd-model-assignments -->",
+		"<!-- /gentle-ai:sdd-model-assignments -->",
+		"| sdd-design | sonnet | default | Architecture decisions |",
+		"| sdd-propose | fable | default | Architectural decisions |",
+		"| default | haiku | default | Generic and SDD/JD delegation fallback |",
+		"Every Claude Agent tool call MUST include `model`",
+		"organic explorer/mapper/writer/verifier and other generic delegations use the `default` assignment",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("CLAUDE.md missing every-delegation model policy %q", want)
+		}
+	}
+
+	lazyContent, err := os.ReadFile(filepath.Join(home, ".claude", "skills", "_shared", "sdd-orchestrator-workflow.md"))
 	if err != nil {
 		t.Fatalf("ReadFile(sdd-orchestrator-workflow.md) error = %v", err)
 	}
-
-	text := string(content)
-	if strings.Contains(text, "| orchestrator |") {
-		t.Fatal("lazy workflow should not expose orchestrator as a configurable model row")
-	}
-	for _, want := range []string{
-		"| sdd-design | sonnet | default | Architecture decisions |",
-		"| sdd-propose | fable | default | Architectural decisions |",
-		"| default | haiku | default | SDD/JD phase fallback |",
-		"Gentle AI does not configure the main orchestrator model",
-	} {
-		if !strings.Contains(text, want) {
-			t.Fatalf("lazy workflow missing custom table row %q", want)
-		}
-	}
-
-	if !strings.Contains(text, "<!-- gentle-ai:sdd-model-assignments -->") {
-		t.Fatal("lazy workflow missing model assignment open marker")
-	}
-	if !strings.Contains(text, "<!-- /gentle-ai:sdd-model-assignments -->") {
-		t.Fatal("lazy workflow missing model assignment close marker")
-	}
-	for _, want := range []string{
-		"Agent tool calls for SDD/Judgment-Day phase agents MUST include `model`",
+	lazy := string(lazyContent)
+	for _, forbidden := range []string{
+		"<!-- gentle-ai:sdd-model-assignments -->",
+		"## Model Assignments",
 		"Generic/non-SDD delegation MUST NOT use this table",
 		"omit `model` unless the user explicitly requested an override",
+		"model assignments",
 	} {
-		if !strings.Contains(text, want) {
-			t.Fatalf("lazy workflow missing scoped model gate text %q", want)
+		if strings.Contains(lazy, forbidden) {
+			t.Fatalf("lazy workflow retains model-routing content %q", forbidden)
 		}
 	}
-	for _, forbidden := range []string{
-		"Every Agent tool call MUST include `model`",
-		"for general/non-SDD delegation use `default`",
-		"Non-SDD general delegation",
-	} {
-		if strings.Contains(text, forbidden) {
-			t.Fatalf("lazy workflow contains legacy generic delegation model routing text %q", forbidden)
-		}
+}
+
+func TestInjectClaudeCommandModelAssignmentsApplyToEveryDelegation(t *testing.T) {
+	home := t.TempDir()
+
+	if _, err := Inject(home, claudeAdapter(), ""); err != nil {
+		t.Fatalf("Inject(claude) error = %v", err)
+	}
+
+	const stale = "Gentle AI only configures models for Agent tool calls to phase sub-agents."
+	const want = "The Claude Code session model is controlled by Claude Code; Gentle AI's always-on Model Assignments policy resolves every Agent tool call, including generic/organic delegation through `default`."
+	for _, name := range []string{"gentle-sdd-new.md", "gentle-sdd-ff.md", "gentle-sdd-continue.md"} {
+		t.Run(name, func(t *testing.T) {
+			content, err := os.ReadFile(filepath.Join(home, ".claude", "commands", name))
+			if err != nil {
+				t.Fatalf("ReadFile(%s) error = %v", name, err)
+			}
+			text := string(content)
+			if strings.Contains(text, stale) {
+				t.Fatalf("installed command retains phase-only model wording %q", stale)
+			}
+			if !strings.Contains(text, want) {
+				t.Fatalf("installed command missing always-on model wording %q", want)
+			}
+		})
 	}
 }
 
@@ -668,13 +686,14 @@ func TestInjectOpenCodePreservesExistingOrchestratorPromptWhenRequested(t *testi
 
 	const customPrompt = "EXTERNAL_PROFILE_MANAGER_CUSTOM_PROMPT_DO_NOT_OVERWRITE"
 	seed := `{
-  "agent": {
-    "gentle-orchestrator": {
-      "mode": "primary",
-      "prompt": "` + customPrompt + `"
-    }
-  }
-}`
+	  // External profile managers may keep opencode.json as JSONC.
+	  "agent": {
+	    "gentle-orchestrator": {
+	      "mode": "primary",
+	      "prompt": "` + customPrompt + `",
+	    },
+	  },
+	}`
 	if err := os.WriteFile(settingsPath, []byte(seed), 0o644); err != nil {
 		t.Fatalf("WriteFile(opencode.json) error = %v", err)
 	}
@@ -1499,6 +1518,59 @@ func TestInjectOpenCodeMigratesLegacyBaseOrchestratorToGentleOrchestrator(t *tes
 	}
 }
 
+func TestInjectOpenCodeMigratesLegacyBaseOrchestratorPreservesUnrelatedJSONCComments(t *testing.T) {
+	seed := []byte(`// leading comment must stay byte-exact
+{
+  "username": "jsonc-user", // username comment must stay
+  "agent": {
+    "sdd-orchestrator": {"mode":"primary","prompt":"LEGACY_PROMPT"},
+    "sdd-orchestrator-cheap": {"mode":"primary"},
+  },
+  // outside agent comment must stay
+  "theme": "dark",
+}
+`)
+	content, err := migrateLegacyOpenCodeSDDOrchestrator(seed)
+	if err != nil {
+		t.Fatalf("migrateLegacyOpenCodeSDDOrchestrator() error = %v", err)
+	}
+	text := string(content)
+	for _, want := range []string{"// leading comment must stay byte-exact", `"username": "jsonc-user", // username comment must stay`, "// outside agent comment must stay"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("updated opencode.jsonc lost unrelated comment/format %q:\n%s", want, text)
+		}
+	}
+	root, err := filemerge.UnmarshalJSONObject(content)
+	if err != nil {
+		t.Fatalf("UnmarshalJSONObject(opencode.jsonc) error = %v", err)
+	}
+	agents := root["agent"].(map[string]any)
+	if _, exists := agents["sdd-orchestrator"]; exists {
+		t.Fatal("legacy sdd-orchestrator should be removed")
+	}
+	if _, exists := agents["sdd-orchestrator-cheap"]; !exists {
+		t.Fatal("profile orchestrator should be preserved")
+	}
+	if _, exists := agents["gentle-orchestrator"]; !exists {
+		t.Fatal("gentle-orchestrator should be created from legacy agent")
+	}
+}
+
+func TestHasOpenCodeAgentKeyAcceptsJSONC(t *testing.T) {
+	settings := `// user settings
+{
+  "agent": {
+    "gentle-orchestrator": {"mode": "primary",},
+  },
+}`
+	if !hasOpenCodeAgentKey(settings, "gentle-orchestrator") {
+		t.Fatal("hasOpenCodeAgentKey() = false, want true for JSONC settings")
+	}
+	if hasOpenCodeAgentKey(`{"agent":`, "gentle-orchestrator") {
+		t.Fatal("hasOpenCodeAgentKey() = true for malformed settings, want false")
+	}
+}
+
 func TestInjectOpenCodeMigratesMisnamedGentlemanSDDOrchestrator(t *testing.T) {
 	home := t.TempDir()
 	mockNoPackageManager(t)
@@ -1510,14 +1582,15 @@ func TestInjectOpenCodeMigratesMisnamedGentlemanSDDOrchestrator(t *testing.T) {
 
 	const priorPrompt = "MISNAMED_GENTLEMAN_SDD_ORCHESTRATOR_PROMPT_TO_MIGRATE"
 	seed := `{
-  "agent": {
-    "gentleman": {
-      "mode": "primary",
-      "description": "Gentleman SDD Orchestrator - coordinates sub-agents",
-      "prompt": "` + priorPrompt + `"
-    }
-  }
-}`
+	  // Legacy misnamed SDD orchestrators may live in JSONC settings.
+	  "agent": {
+	    "gentleman": {
+	      "mode": "primary",
+	      "description": "Gentleman SDD Orchestrator - coordinates sub-agents",
+	      "prompt": "` + priorPrompt + `",
+	    },
+	  },
+	}`
 	if err := os.WriteFile(settingsPath, []byte(seed), 0o644); err != nil {
 		t.Fatalf("WriteFile(opencode.json) error = %v", err)
 	}
@@ -1715,6 +1788,65 @@ func TestInjectOpenCodeMigratesLegacyAgentsKey(t *testing.T) {
 	}
 	if _, ok := agentMap["sdd-orchestrator"]; ok {
 		t.Fatal("legacy sdd-orchestrator agent should not remain after merge")
+	}
+}
+
+func TestInjectOpenCodeMigratesLegacyAgentsKeyPreservesUnrelatedJSONCComments(t *testing.T) {
+	seed := []byte(`// leading comment must stay
+{
+  "username": "jsonc-user", // keep username line
+  "agents": {
+    "legacy-agent": {"mode": "all", "prompt": "{file:./AGENTS.md}",},
+  },
+  // keep trailing setting comment
+  "theme": "dark",
+}
+`)
+	content, err := migrateLegacyOpenCodeAgentsKey(seed)
+	if err != nil {
+		t.Fatalf("migrateLegacyOpenCodeAgentsKey() error = %v", err)
+	}
+	text := string(content)
+	for _, want := range []string{"// leading comment must stay", `"username": "jsonc-user", // keep username line`, "// keep trailing setting comment"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("updated opencode.jsonc lost unrelated comment/format %q:\n%s", want, text)
+		}
+	}
+	root, err := filemerge.UnmarshalJSONObject(content)
+	if err != nil {
+		t.Fatalf("UnmarshalJSONObject(opencode.jsonc) error = %v", err)
+	}
+	if _, hasLegacy := root["agents"]; hasLegacy {
+		t.Fatal("legacy agents key should be removed")
+	}
+	agents := root["agent"].(map[string]any)
+	if _, ok := agents["legacy-agent"]; !ok {
+		t.Fatal("legacy-agent should move under agent")
+	}
+}
+
+func TestInjectOpenCodeMigratesLegacyAgentsKeyWithCommentBeforeColon(t *testing.T) {
+	seed := []byte(`{
+  "agents" /* comment mentioning "agents" before colon */: {
+    "legacy-agent": {"mode": "all", "prompt": "{file:./AGENTS.md}"},
+  },
+  "theme": "dark"
+}
+`)
+	content, err := migrateLegacyOpenCodeAgentsKey(seed)
+	if err != nil {
+		t.Fatalf("migrateLegacyOpenCodeAgentsKey() error = %v", err)
+	}
+	root, err := filemerge.UnmarshalJSONObject(content)
+	if err != nil {
+		t.Fatalf("UnmarshalJSONObject(opencode.jsonc) error = %v\n%s", err, string(content))
+	}
+	if _, hasLegacy := root["agents"]; hasLegacy {
+		t.Fatalf("legacy agents key should be removed from JSONC with comment before colon:\n%s", string(content))
+	}
+	agents := root["agent"].(map[string]any)
+	if _, ok := agents["legacy-agent"]; !ok {
+		t.Fatalf("legacy-agent should move under agent:\n%s", string(content))
 	}
 }
 
@@ -3398,6 +3530,69 @@ func TestInjectOpenCodeMultiModeWithModelAssignments(t *testing.T) {
 	}
 	if _, hasModel := verifyAgent["model"]; hasModel {
 		t.Fatal("sdd-verify should not have a model field (unassigned phase)")
+	}
+}
+
+func TestInjectOpenCodeWritesExistingJSONCConfig(t *testing.T) {
+	home := t.TempDir()
+	mockNoPackageManager(t)
+
+	configDir := filepath.Join(home, ".config", "opencode")
+	jsoncPath := filepath.Join(configDir, "opencode.jsonc")
+	jsonPath := filepath.Join(configDir, "opencode.json")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(config dir) error = %v", err)
+	}
+	seed := `// user-owned OpenCode config
+{
+  "username": "jsonc-user",
+  "agent": {
+    "sdd-apply": {
+      "mode": "subagent"
+    }
+  },
+}
+`
+	if err := os.WriteFile(jsoncPath, []byte(seed), 0o644); err != nil {
+		t.Fatalf("WriteFile(opencode.jsonc) error = %v", err)
+	}
+
+	result, err := Inject(home, opencodeAdapter(), model.SDDModeMulti, InjectOptions{
+		OpenCodeModelAssignments: map[string]model.ModelAssignment{
+			"sdd-apply": {ProviderID: "openai", ModelID: "gpt-5-mini"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Inject(opencode jsonc) error = %v", err)
+	}
+	if !result.Changed {
+		t.Fatal("Inject(opencode jsonc) changed = false")
+	}
+	if _, err := os.Stat(jsonPath); !os.IsNotExist(err) {
+		t.Fatalf("Inject must not create opencode.json when opencode.jsonc is effective; stat err = %v", err)
+	}
+
+	content, err := os.ReadFile(jsoncPath)
+	if err != nil {
+		t.Fatalf("ReadFile(opencode.jsonc) error = %v", err)
+	}
+	root := map[string]any{}
+	if err := json.Unmarshal(content, &root); err != nil {
+		t.Fatalf("Unmarshal(updated opencode.jsonc) error = %v\n%s", err, content)
+	}
+	agents, ok := root["agent"].(map[string]any)
+	if !ok {
+		t.Fatal("opencode.jsonc missing agent map")
+	}
+	applyAgent, ok := agents["sdd-apply"].(map[string]any)
+	if !ok {
+		t.Fatalf("opencode.jsonc missing sdd-apply agent: %v", agents)
+	}
+	if got := applyAgent["model"]; got != "openai/gpt-5-mini" {
+		t.Fatalf("sdd-apply model = %v, want openai/gpt-5-mini", got)
+	}
+	if root["username"] != "jsonc-user" {
+		t.Fatalf("updated opencode.jsonc lost existing username: %v", root)
 	}
 }
 
@@ -5570,18 +5765,19 @@ func TestKilocodeSharedLegacyMigrationsPreserveTools(t *testing.T) {
 	home := t.TempDir()
 	settingsPath := kilocodeAdapter().SettingsPath(home)
 	before := []byte(`{
-  "agents": {
-    "sdd-orchestrator": {"prompt": "legacy", "legacyMetadata": "preserve", "tools": {"read": true}},
-    "legacy-agent": {"tools": {"bash": true}}
-  },
-  "agent": {
-    "user-owned": {"tools": {"custom": true}}
-  },
-  "command": {
-		"legacy": {"prompt": "legacy command"}
-  }
-}
-`)
+	  // Legacy OpenCode-compatible settings may be JSONC.
+	  "agents": {
+	    "sdd-orchestrator": {"prompt": "legacy", "legacyMetadata": "preserve", "tools": {"read": true}},
+	    "legacy-agent": {"tools": {"bash": true}},
+	  },
+	  "agent": {
+	    "user-owned": {"tools": {"custom": true}},
+	  },
+	  "command": {
+			"legacy": {"prompt": "legacy command"},
+	  },
+	}
+	`)
 	if err := os.MkdirAll(filepath.Dir(settingsPath), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -7102,6 +7298,129 @@ func TestEnsureClaudeSkillRegistryHookRejectsUnexpectedHookSchema(t *testing.T) 
 	}
 }
 
+func TestEnsureClaudeReviewStopHookAppendsIdempotently(t *testing.T) {
+	home := t.TempDir()
+	settingsPath := filepath.Join(home, ".claude", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(settingsPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	initial := `{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {"type": "command", "command": "echo keep"}
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {"type": "command", "command": "echo existing stop"}
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "startup",
+        "hooks": [
+          {"type": "command", "command": "echo existing session-start"}
+        ]
+      }
+    ]
+  }
+}`
+	if err := os.WriteFile(settingsPath, []byte(initial), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	changed, err := ensureClaudeReviewStopHook(settingsPath, model.AgentClaudeCode)
+	if err != nil {
+		t.Fatalf("ensureClaudeReviewStopHook() error = %v", err)
+	}
+	if !changed {
+		t.Fatal("first call changed = false, want true")
+	}
+	changed, err = ensureClaudeReviewStopHook(settingsPath, model.AgentClaudeCode)
+	if err != nil {
+		t.Fatalf("second ensureClaudeReviewStopHook() error = %v", err)
+	}
+	if changed {
+		t.Fatal("second call changed = true, want false")
+	}
+
+	data, err := os.ReadFile(settingsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	if strings.Count(text, "gentle-ai review stop-hook --agent claude-code") != 2 {
+		t.Fatalf("hook command count mismatch, want one Stop entry and one SessionStart entry:\n%s", text)
+	}
+	if !strings.Contains(text, `"matcher": "startup|resume|clear|compact"`) {
+		t.Fatalf("SessionStart baseline entry missing expected matcher:\n%s", text)
+	}
+	if !strings.Contains(text, "echo keep") || !strings.Contains(text, "echo existing stop") || !strings.Contains(text, "echo existing session-start") {
+		t.Fatalf("existing hooks not preserved:\n%s", text)
+	}
+}
+
+func TestEnsureClaudeReviewStopHookRejectsUnexpectedHookSchema(t *testing.T) {
+	home := t.TempDir()
+	settingsPath := filepath.Join(home, ".claude", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(settingsPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	original := []byte(`{"hooks":{"Stop":{"bad":true}}}`)
+	if err := os.WriteFile(settingsPath, original, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	changed, err := ensureClaudeReviewStopHook(settingsPath, model.AgentClaudeCode)
+	if err == nil {
+		t.Fatal("ensureClaudeReviewStopHook() error = nil, want schema error")
+	}
+	if changed {
+		t.Fatal("changed = true, want false")
+	}
+	after, readErr := os.ReadFile(settingsPath)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if string(after) != string(original) {
+		t.Fatalf("settings were modified: %q", after)
+	}
+}
+
+func TestInject_ClaudeCodeInstallsReviewStopHook(t *testing.T) {
+	home := t.TempDir()
+
+	result, err := Inject(home, claudeAdapter(), "")
+	if err != nil {
+		t.Fatalf("Inject() error = %v", err)
+	}
+
+	settingsPath := filepath.Join(home, ".claude", "settings.json")
+	if !containsPath(result.Files, settingsPath) {
+		t.Fatalf("result.Files missing Claude settings path %q: %v", settingsPath, result.Files)
+	}
+	data, err := os.ReadFile(settingsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	if !strings.Contains(text, "gentle-ai skill-registry refresh") {
+		t.Fatalf("Claude settings.json missing skill-registry hook:\n%s", text)
+	}
+	if strings.Count(text, "gentle-ai review stop-hook --agent claude-code") != 2 {
+		t.Fatalf("Claude settings.json missing review stop-hook Stop+SessionStart entries:\n%s", text)
+	}
+	if !strings.Contains(text, `"matcher": "startup|resume|clear|compact"`) {
+		t.Fatalf("Claude settings.json missing SessionStart baseline matcher:\n%s", text)
+	}
+}
+
 func TestEnsureCodexSkillRegistryHookWritesSessionStartHookIdempotently(t *testing.T) {
 	home := t.TempDir()
 	hooksPath := filepath.Join(home, ".codex", "hooks.json")
@@ -7587,6 +7906,17 @@ func TestMigrateLegacyOpenCodeCommandPrompt(t *testing.T) {
 			wantField: map[string]string{"x": "body"},
 			wantNoKey: []string{"x"},
 		},
+		{
+			name: "accepts commented trailing-comma JSONC",
+			input: `// user command config
+{
+  "command": {
+    "skill-creator": {"description": "Create a skill", "prompt": "Load skill-creator",},
+  },
+}`,
+			wantField: map[string]string{"skill-creator": "Load skill-creator"},
+			wantNoKey: []string{"skill-creator"},
+		},
 	}
 
 	for _, tt := range tests {
@@ -7595,8 +7925,8 @@ func TestMigrateLegacyOpenCodeCommandPrompt(t *testing.T) {
 			if err != nil {
 				t.Fatalf("migrateLegacyOpenCodeCommandPrompt() error = %v", err)
 			}
-			root := map[string]any{}
-			if err := json.Unmarshal(out, &root); err != nil {
+			root, err := filemerge.UnmarshalJSONObject(out)
+			if err != nil {
 				t.Fatalf("result is not valid JSON: %v", err)
 			}
 			commands, _ := root["command"].(map[string]any)
