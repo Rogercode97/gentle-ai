@@ -291,7 +291,38 @@ This ensures:
 
 Do NOT skip this check. Do not ask the user about init itself once preflight is satisfied; run init through its dynamic phase subagent before continuing.
 
-### Execution Mode
+### SDD Session Preflight and Execution Mode (HARD GATE)
+
+Before executing ANY `/sdd-*` command or natural-language SDD request, ensure this session has an explicit `SDD Session Preflight` decision block and cached execution mode.
+
+This applies to `/sdd-new`, `/sdd-ff`, `/sdd-continue`, `/sdd-explore`, `/sdd-status`, `/sdd-apply`, `/sdd-verify`, `/sdd-archive`, and natural-language equivalents such as "use SDD to add dark mode" or "do it with SDD".
+
+If the session preflight or execution mode is missing, ASK first, then STOP and wait for the user's answer before invoking any dynamic subagent. Existing `openspec/config.yaml`, existing SDD artifacts, previous `sdd-init` results, installed SDD assets, or the requested command text do NOT satisfy this gate.
+
+Required preflight choices:
+
+1. **Execution mode**: `interactive` or `auto` / `automatic`.
+2. **Artifact store**: `engram`, `openspec`, `hybrid` / `both`, or `none` when no persistent backend is available.
+3. **Delivery strategy**: `ask-on-risk`, `auto-chain`, `single-pr`, or `exception-ok`.
+4. **Review budget / chained PR policy**: reviewer-burden line budget and chain strategy when chaining is selected.
+
+Only after the choices are collected may the orchestrator run the SDD init guard or invoke the requested dynamic phase subagent. Cache the choices for the session and include the relevant values in every dynamic subagent context.
+
+Interactive mode is a hard pause gate, not summary-only wording. In **Interactive** mode, after each phase subagent returns:
+
+1. Summarize the completed phase: `status`, artifact references, key decisions, risks, and `next_recommended`.
+2. List what the next phase would do if the user continues.
+3. Ask whether the user wants to continue, adjust, or stop.
+4. STOP and wait for user input before invoking the next dynamic subagent.
+5. If the user asks to adjust, incorporate the feedback into the next phase context or rerun the appropriate phase instead of advancing blindly.
+
+Interactive approval is phase-scoped. Words like `continue`, `dale`, or `go on` approve only the immediate next phase, not the rest of the SDD pipeline.
+
+Do NOT run `/sdd-ff` or dynamic subagent chains back-to-back unless the cached execution mode is `auto` / `automatic`. In `interactive` mode, `/sdd-ff` runs only the next planning phase, reports it, and waits before proceeding to spec, design, tasks, apply, verify, or archive.
+
+Before the `sdd-propose` phase in interactive mode, run a product/proposal question round before invoking `sdd-propose`. Explain that the questions improve the PRD/proposal by uncovering business understanding, business rules, implications, impact, edge cases, and product tradeoffs. Prefer 3–5 concrete product questions, summarize the resulting assumptions, then ask whether to continue, correct the assumptions, or run another question round. Cover business/product/PRD decisions: business problem, target users and situations, business rules, product outcome, current-state gap, implications and impact, edge cases, decision gaps, first-slice scope boundaries, non-goals, product constraints, and business tradeoffs. Do not ask about test commands, PR shape, changed-line budget, or other harness mechanics at proposal time unless the user explicitly asks to discuss delivery.
+
+Technical artifacts and prompts remain English. The active persona controls direct user conversation only; generated SDD artifacts, dynamic subagent prompts, task packets, specs, designs, tests, and code comments default to English unless the user explicitly requests another artifact language.
 
 ### Execution Mode
 

@@ -9,9 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
-	"os"
-	"path/filepath"
 	"reflect"
 	"sort"
 	"strings"
@@ -44,8 +41,9 @@ type compactAdmittedRefuterValue struct {
 }
 
 type CompactTargetedValidatorCheckEvidence struct {
-	Passed   bool     `json:"passed"`
-	Evidence []string `json:"evidence"`
+	Passed      bool         `json:"passed"`
+	Evidence    []string     `json:"evidence"`
+	Regressions []Regression `json:"regressions,omitempty"`
 }
 
 // CompactTargetedValidatorEvidence is the canonical observed evidence for one
@@ -355,6 +353,21 @@ func (store CompactStore) CaptureAdmittedReviewerResult(
 	if err != nil {
 		return CompactAdmittedReviewerCapture{}, err
 	}
+	if len(admission.DowngradedCausalFindings) > 0 {
+		// AdmitArtifact already rewrote each downgraded finding's disposition
+		// to CausalUnknown on admitted and derived admission.CanonicalSHA256
+		// from that exact rewritten content (CanonicalReviewerResultPayload).
+		// canonicalPayload above was still serialized from the pre-admission,
+		// self-claimed findings, so re-derive it here through the identical
+		// shared serializer AdmitArtifact used -- never a separate, caller-
+		// local re-marshal -- so the bytes persisted as the envelope Result
+		// can never independently drift from the digest admission carries.
+		downgradedPayload, payloadErr := CanonicalReviewerResultPayload(providerResult.SubjectHash, canonicalInspection, admitted)
+		if payloadErr != nil {
+			return CompactAdmittedReviewerCapture{}, payloadErr
+		}
+		canonicalPayload = downgradedPayload
+	}
 	envelopePayload, err := json.Marshal(compactAdmittedReviewerResult{
 		Schema:    admittedReviewerResultSchemaForSubject(expected),
 		Subject:   expected,
@@ -634,7 +647,8 @@ func compactAdmittedReviewerCaptureFromSlot(
 	if err != nil {
 		return CompactAdmittedReviewerCapture{}, fmt.Errorf("decode admitted reviewer result readback: %w", err)
 	}
-	if envelope.Schema != admittedReviewerResultSchemaForSubject(subject) || envelope.Subject != subject || envelope.Admission.Validate(subject) != nil {
+	if envelope.Schema != admittedReviewerResultSchemaForSubject(subject) || envelope.Subject != subject ||
+		envelope.Admission.Validate(subject, append(append([]byte(nil), envelope.Result...), '\n')) != nil {
 		// refusal:by-design human-authority: immutable readback bytes that no longer bind the admitted authority require storage inspection rather than replacement
 		return CompactAdmittedReviewerCapture{}, errors.New("admitted reviewer result readback does not match repository authority")
 	}
@@ -875,309 +889,4 @@ func (store CompactStore) RecordInconclusiveTargetedValidatorAttempt(ctx context
 		return false, err
 	}
 	return false, nil
-}
-
-func createCompactRoleResultDirectories(storeDir, directory string) error {
-	relative, err := filepath.Rel(storeDir, directory)
-	if err != nil || relative == "." || filepath.IsAbs(relative) || strings.HasPrefix(relative, ".."+string(filepath.Separator)) || relative == ".." {
-		return errors.New("provider role result directory escapes compact store") // refusal:by-design world-action: compiled role keys must remain under compact authority
-	}
-	current := storeDir
-	for _, part := range strings.Split(relative, string(filepath.Separator)) {
-		current = filepath.Join(current, part)
-		if _, err := createPrivateRARDirectory(current); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func requireCompactRoleResultSlotCompatible(path string, payload []byte) error {
-	existing, err := readPrivateCompactReviewerFile(path, compactReviewerResultSizeLimit)
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	if !bytes.Equal(existing, payload) {
-		return fmt.Errorf("%w: existing bytes differ from requested provider role result", ErrCapturedReviewerResultSlotConflict)
-	}
-	return nil
-}
-
-func publishPrivateCompactReviewerFile(
-	path string,
-	payload []byte,
-	limit int,
-) error {
-	if len(payload) == 0 || len(payload) > limit {
-		return errors.New("reviewer artifact payload size is invalid")
-	}
-	if err := requireCompactRoleResultSlotCompatible(path, payload); err != nil {
-		return err
-	}
-	if err := publishPrivateRARImmutable(path, payload); err != nil {
-		return err
-	}
-	readBack, err := readPrivateCompactReviewerFile(path, int64(limit))
-	if err != nil {
-		return err
-	}
-	if !bytes.Equal(readBack, payload) {
-		return errors.New("reviewer artifact immutable publication mismatch")
-	}
-	return nil
-}
-
-func readPrivateCompactReviewerFile(path string, limit int64) ([]byte, error) {
-	before, err := os.Lstat(path)
-	if err != nil {
-		return nil, err
-	}
-	if rarPathUnsafe(path, before) ||
-		!before.Mode().IsRegular() ||
-		!privateRARPathSafe(path, before) ||
-		!compactReviewerFileSingleLink(nil, before) {
-		return nil, errUnsafeRARAuthorityPath
-	}
-	file, err := openRARPathNoFollow(path, false)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-	opened, err := file.Stat()
-	if err != nil ||
-		!opened.Mode().IsRegular() ||
-		!os.SameFile(before, opened) ||
-		!privateOpenRARPathSafe(file, opened) ||
-		!compactReviewerFileSingleLink(file, opened) {
-		if err != nil {
-			return nil, err
-		}
-		return nil, errRARAuthorityPathReplaced
-	}
-	if opened.Size() < 1 || opened.Size() > limit {
-		return nil, errors.New(
-			"reviewer artifact is unreadable or outside the native size bound",
-		)
-	}
-	payload, err := io.ReadAll(io.LimitReader(file, limit+1))
-	if err != nil || int64(len(payload)) > limit {
-		return nil, errors.New(
-			"reviewer artifact is unreadable or outside the native size bound",
-		)
-	}
-	afterOpen, err := file.Stat()
-	if err != nil {
-		return nil, err
-	}
-	current, err := os.Lstat(path)
-	if err != nil {
-		return nil, err
-	}
-	if !os.SameFile(opened, afterOpen) ||
-		!os.SameFile(afterOpen, current) ||
-		afterOpen.Size() != int64(len(payload)) ||
-		!privateOpenRARPathSafe(file, afterOpen) ||
-		!compactReviewerFileSingleLink(file, afterOpen) {
-		return nil, errRARAuthorityPathReplaced
-	}
-	return payload, nil
-}
-
-func readCompactReviewerArtifact(path string) ([]byte, string, error) {
-	payload, err := readPrivateCompactReviewerFile(path, compactReviewerResultSizeLimit)
-	if err != nil {
-		return nil, "", err
-	}
-	digestPayload, err := readPrivateCompactReviewerFile(path+".sha256", 256)
-	if err != nil {
-		return nil, "", err
-	}
-	digest := strings.TrimSpace(string(digestPayload))
-	if !validSHA256(digest) || compactPreservedPayloadDigest(payload) != digest {
-		return nil, "", errors.New("reviewer artifact digest does not match its bytes")
-	}
-	return payload, digest, nil
-}
-
-// ReviewerAttemptRecord represents non-admitted attempt evidence.
-type ReviewerAttemptRecord struct {
-	Schema            string            `json:"schema"` // "gentle-ai.review-attempt-record/v1"
-	LineageID         string            `json:"lineage_id"`
-	TargetIdentity    string            `json:"target_identity"`
-	AuthorityRevision string            `json:"authority_revision"`
-	Lens              string            `json:"lens"`
-	SelectedOrder     int               `json:"selected_order"`
-	SubjectHash       string            `json:"subject_hash"`
-	AttemptIndex      int               `json:"attempt_index"`
-	Admission         ArtifactAdmission `json:"admission"`
-	RawSHA256         string            `json:"raw_sha256"`
-	CanonicalSHA256   string            `json:"canonical_sha256"`
-}
-
-type CaptureReviewerAttemptRequest struct {
-	StoreDir          string
-	LineageID         string
-	TargetIdentity    string
-	AuthorityRevision string
-	Lens              string
-	SelectedOrder     int
-	SubjectHash       string
-	Admission         ArtifactAdmission
-	RawPayload        []byte
-	CanonicalPayload  []byte
-}
-
-// CaptureUnachievableReviewerAttempt persists a non-admitted reviewer attempt record.
-func (store CompactStore) CaptureUnachievableReviewerAttempt(ctx context.Context, req CaptureReviewerAttemptRequest) (ReviewerAttemptRecord, error) {
-	if ctx == nil {
-		return ReviewerAttemptRecord{}, errors.New("capture unachievable attempt context is nil")
-	}
-	if err := ctx.Err(); err != nil {
-		return ReviewerAttemptRecord{}, err
-	}
-	storeDir := req.StoreDir
-	if storeDir == "" {
-		storeDir = store.Dir
-	}
-	if !validSHA256(req.AuthorityRevision) || !validSHA256(req.TargetIdentity) {
-		return ReviewerAttemptRecord{}, errors.New("capture unachievable attempt requires exact revision and target")
-	}
-	if req.SelectedOrder < 0 || !isSupportedLens(req.Lens) {
-		return ReviewerAttemptRecord{}, errors.New("capture unachievable attempt requires valid lens and order")
-	}
-	if len(req.RawPayload) == 0 || len(req.RawPayload) > compactReviewerResultSizeLimit ||
-		len(req.CanonicalPayload) == 0 || len(req.CanonicalPayload) > compactReviewerResultSizeLimit {
-		return ReviewerAttemptRecord{}, errors.New("attempt payload is empty or exceeds size limit")
-	}
-	if req.Admission.Decision != ArtifactAdmissionUnachievable {
-		return ReviewerAttemptRecord{}, errors.New("capture unachievable attempt requires unachievable admission decision")
-	}
-
-	attemptsDir := filepath.Join(storeDir, CompactReviewerAttemptsDir)
-	if err := createCompactRoleResultDirectories(storeDir, attemptsDir); err != nil {
-		return ReviewerAttemptRecord{}, fmt.Errorf("create reviewer attempts directory: %w", err)
-	}
-	if err := SyncReviewDirectory(storeDir); err != nil {
-		return ReviewerAttemptRecord{}, fmt.Errorf("sync reviewer attempts parent directory: %w", err)
-	}
-
-	existing, err := ReadCompactReviewerAttempts(storeDir, req.SelectedOrder, req.Lens)
-	if err != nil {
-		return ReviewerAttemptRecord{}, err
-	}
-	attemptIndex := len(existing) + 1
-
-	rawSHA := payloadSHA256(req.RawPayload)
-	canonicalSHA := payloadSHA256(req.CanonicalPayload)
-
-	admission := req.Admission
-	admission.Schema = ArtifactAdmissionSchema
-	admission.Decision = ArtifactAdmissionUnachievable
-	admission.SubjectHash = req.SubjectHash
-	admission.RawSHA256 = rawSHA
-	admission.CanonicalSHA256 = canonicalSHA
-
-	record := ReviewerAttemptRecord{
-		Schema:            ReviewerAttemptRecordSchema,
-		LineageID:         req.LineageID,
-		TargetIdentity:    req.TargetIdentity,
-		AuthorityRevision: req.AuthorityRevision,
-		Lens:              req.Lens,
-		SelectedOrder:     req.SelectedOrder,
-		SubjectHash:       req.SubjectHash,
-		AttemptIndex:      attemptIndex,
-		Admission:         admission,
-		RawSHA256:         rawSHA,
-		CanonicalSHA256:   canonicalSHA,
-	}
-
-	payload, err := json.Marshal(record)
-	if err != nil {
-		return ReviewerAttemptRecord{}, err
-	}
-	payload = append(payload, '\n')
-	digestPayload := []byte(compactPreservedPayloadDigest(payload) + "\n")
-
-	fileName := fmt.Sprintf("%02d-%s-%02d.json", req.SelectedOrder, req.Lens, attemptIndex)
-	filePath := filepath.Join(attemptsDir, fileName)
-
-	if err := requireCompactRoleResultSlotCompatible(filePath, payload); err != nil {
-		return ReviewerAttemptRecord{}, err
-	}
-	if err := requireCompactRoleResultSlotCompatible(filePath+".sha256", digestPayload); err != nil {
-		return ReviewerAttemptRecord{}, err
-	}
-	if err := publishPrivateCompactReviewerFile(filePath, payload, compactReviewerResultSizeLimit); err != nil {
-		return ReviewerAttemptRecord{}, fmt.Errorf("publish attempt artifact: %w", err)
-	}
-	if err := publishPrivateCompactReviewerFile(filePath+".sha256", digestPayload, 256); err != nil {
-		return ReviewerAttemptRecord{}, fmt.Errorf("publish attempt digest sidecar: %w", err)
-	}
-
-	return record, nil
-}
-
-// ReadCompactReviewerAttempts reads all unachievable attempt records for a given slot.
-func ReadCompactReviewerAttempts(storeDir string, order int, lens string) ([]ReviewerAttemptRecord, error) {
-	if order < 0 || !isSupportedLens(lens) {
-		return nil, errors.New("invalid lens or order for reviewer attempts")
-	}
-	dir := filepath.Join(storeDir, CompactReviewerAttemptsDir)
-	if _, err := os.Stat(dir); errors.Is(err, fs.ErrNotExist) {
-		return []ReviewerAttemptRecord{}, nil
-	} else if err != nil {
-		return nil, err
-	}
-	var records []ReviewerAttemptRecord
-	for index := 1; ; index++ {
-		filename := fmt.Sprintf("%02d-%s-%02d.json", order, lens, index)
-		path := filepath.Join(dir, filename)
-		if _, err := os.Lstat(path); errors.Is(err, fs.ErrNotExist) {
-			break
-		} else if err != nil {
-			return nil, err
-		}
-		payload, _, err := readCompactReviewerArtifact(path)
-		if err != nil {
-			return nil, fmt.Errorf("read attempt artifact %s: %w", filename, err)
-		}
-		var record ReviewerAttemptRecord
-		decoder := json.NewDecoder(bytes.NewReader(payload))
-		decoder.DisallowUnknownFields()
-		if err := decoder.Decode(&record); err != nil {
-			return nil, fmt.Errorf("decode attempt record %s: %w", filename, err)
-		}
-		var extra any
-		if err := decoder.Decode(&extra); err != io.EOF || record.Schema != ReviewerAttemptRecordSchema ||
-			record.SelectedOrder != order || record.Lens != lens || record.AttemptIndex != index {
-			return nil, fmt.Errorf("attempt record %s does not match expected schema or index", filename)
-		}
-		records = append(records, record)
-	}
-	return records, nil
-}
-
-// DiscoverReviewerSlotAttempts groups all matching attempt records by selected lens slot order.
-func DiscoverReviewerSlotAttempts(storeDir string, state CompactState, revision string) (map[int][]ReviewerAttemptRecord, error) {
-	result := make(map[int][]ReviewerAttemptRecord)
-	for order, lens := range state.SelectedLenses {
-		attempts, err := ReadCompactReviewerAttempts(storeDir, order, lens)
-		if err != nil {
-			return nil, err
-		}
-		var matching []ReviewerAttemptRecord
-		for _, att := range attempts {
-			if att.LineageID == state.LineageID && att.AuthorityRevision == revision &&
-				att.TargetIdentity == state.InitialSnapshot.Identity && att.Lens == lens && att.SelectedOrder == order {
-				matching = append(matching, att)
-			}
-		}
-		if len(matching) > 0 {
-			result[order] = matching
-		}
-	}
-	return result, nil
 }
