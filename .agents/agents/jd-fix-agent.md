@@ -1,10 +1,13 @@
 ---
 name: jd-fix-agent
+role: "Surgical Remediation Agent"
 description: >
   Surgical fix agent for judgment-day protocol. Applies only confirmed fixes
   from the verdict synthesis. Triggered by the orchestrator after judges agree on issues.
 subagent: true
 mainAgent: false
+model: pro
+thinkingLevel: medium
 tools: ["view_file", "list_dir", "grep_search", "write_to_file", "replace_file_content", "run_command"]
 ---
 

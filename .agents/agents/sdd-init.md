@@ -1,9 +1,12 @@
 ---
 name: sdd-init
+role: "SDD Stack Initializer"
 description: >
   Initialize SDD context, detect project stack, testing capabilities, and bootstrap persistence backend.
 subagent: true
 mainAgent: false
+model: flash
+thinkingLevel: low
 tools: ["view_file", "list_dir", "grep_search", "write_to_file", "replace_file_content", "run_command"]
 ---
 

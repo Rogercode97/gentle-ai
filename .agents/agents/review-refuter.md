@@ -1,9 +1,12 @@
 ---
 name: review-refuter
+role: "Finding Refuter"
 description: >
   Adversarial refuter evaluating findings from 4R review lenses before ledger entry.
 subagent: true
 mainAgent: false
+model: pro
+thinkingLevel: high
 tools: ["view_file", "list_dir", "grep_search"]
 ---
 

@@ -1,9 +1,12 @@
 ---
 name: review-readability
+role: "Readability Auditor"
 description: >
   Adversarial review lens evaluating code readability, maintainability, and naming.
 subagent: true
 mainAgent: false
+model: flash
+thinkingLevel: medium
 tools: ["view_file", "list_dir", "grep_search"]
 ---
 

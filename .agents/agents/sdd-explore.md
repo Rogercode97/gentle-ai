@@ -1,9 +1,12 @@
 ---
 name: sdd-explore
+role: "Codebase Explorer"
 description: >
   Explore codebase and investigate architecture ideas. Read-only codebase mapping; does not write proposals or specs.
 subagent: true
 mainAgent: false
+model: flash
+thinkingLevel: low
 tools: ["view_file", "list_dir", "grep_search"]
 ---
 

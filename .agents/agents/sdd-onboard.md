@@ -1,9 +1,12 @@
 ---
 name: sdd-onboard
+role: "Project Onboarding Guide"
 description: >
   Guide new projects through initial SDD setup and workflow orientation.
 subagent: true
 mainAgent: false
+model: flash
+thinkingLevel: low
 tools: ["view_file", "list_dir", "grep_search", "write_to_file", "replace_file_content", "run_command"]
 ---
 

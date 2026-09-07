@@ -1,9 +1,12 @@
 ---
 name: sdd-design
+role: "System Architecture Designer"
 description: >
   Create detailed system architecture and component design artifacts.
 subagent: true
 mainAgent: false
+model: pro
+thinkingLevel: high
 tools: ["view_file", "list_dir", "grep_search", "write_to_file", "replace_file_content"]
 ---
 

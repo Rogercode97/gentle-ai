@@ -1,9 +1,12 @@
 ---
 name: sdd-tasks
+role: "Work Unit Task Planner"
 description: >
   Generate structured task DAGs and implementation work units.
 subagent: true
 mainAgent: false
+model: flash
+thinkingLevel: low
 tools: ["view_file", "list_dir", "grep_search", "write_to_file", "replace_file_content"]
 ---
 

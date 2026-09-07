@@ -1,9 +1,12 @@
 ---
 name: sdd-verify
+role: "Implementation Verifier"
 description: >
   Validate implementation against specs using tests and verification builds.
 subagent: true
 mainAgent: false
+model: pro
+thinkingLevel: high
 tools: ["view_file", "list_dir", "grep_search", "write_to_file", "replace_file_content", "run_command"]
 ---
 
