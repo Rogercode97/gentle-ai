@@ -487,7 +487,23 @@ func TestKilocodeReviewSettingsMatchCurrentMainBaseline(t *testing.T) {
 	// renders the OpenCode orchestrator asset, so the baseline is rederived.
 	// #3499 projects the canonical three-choice session preflight into the
 	// OpenCode-derived Kilocode prompt, so the combined baseline is rederived.
-	const want = "7c499e23051f637c9befdc22c040e8c541137d8d3aadbea93b2f3580573fb66f"
+	// #4296 adds the shared "Delegated Verification Gate (MANDATORY)" section
+	// to every runtime orchestrator's Delegation Rules block: the RDD-aware,
+	// risk-gated rule that decides whether a delegated writer's work is
+	// verified by the writer itself, by an on-demand separate verifier, or by
+	// a mandatory independent verifier. Kilo renders that section through the
+	// OpenCode orchestrator asset, so the baseline is rederived.
+	// #4304 adds the declined-review fallback to that same shared section: the
+	// RDD-on shortcut holds only while the native review reaches a terminal
+	// outcome for this candidate, and a declined consent envelope, clone-local
+	// RDD disable, or a START/STATUS refusal fall back to the risk-gated tier
+	// table exactly like RDD off. Kilo renders that section through the
+	// OpenCode orchestrator asset, so the baseline is rederived.
+	// #2855 replaces identity-free task-failure commands with coordinator
+	// guidance. Kilocode embeds the changed OpenCode consumer wording.
+	// #4315 adds __managed_by metadata through the shared OpenCode overlay.
+	// Kilocode inherits that metadata, not additional native RDD support.
+	const want = "01a5b51ff7e11740fc47698fff1e710826c2d34862c36da16ef0769a9e1e3b41"
 	if got != want {
 		t.Fatalf("Kilocode settings SHA-256 = %s, want current-main baseline %s", got, want)
 	}

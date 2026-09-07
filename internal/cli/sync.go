@@ -36,6 +36,7 @@ import (
 	"github.com/gentleman-programming/gentle-ai/v2/internal/pipeline"
 	"github.com/gentleman-programming/gentle-ai/v2/internal/state"
 	"github.com/gentleman-programming/gentle-ai/v2/internal/system"
+	"github.com/gentleman-programming/gentle-ai/v2/internal/telemetry"
 	"github.com/gentleman-programming/gentle-ai/v2/internal/verify"
 )
 
@@ -1654,7 +1655,11 @@ func runSyncWithSelection(homeDir string, selection model.Selection, background 
 	}
 
 	// Post-apply verification reuses the same component paths as install.
-	result.Verify = withFailedSyncVerificationNote(runPostSyncVerification(homeDir, rt.workspaceDir, selection))
+	result.Verify = runPostSyncVerification(homeDir, rt.workspaceDir, selection)
+	configChecks := verify.RunChecks(context.Background(), openCodeConfigChecks(homeDir, rt.workspaceDir, agentIDs))
+	result.Verify = verify.BuildReport(append(result.Verify.Checks, configChecks...))
+	result.Verify = withFailedSyncVerificationNote(result.Verify)
+
 	result.BackgroundPolicyEnabled = rt.runtimeReady && background.Effective == model.OpenCodeBackgroundOn
 	if background.activationPlan != nil {
 		result.Background.Activation = background.activationPlan.Report()
@@ -1898,6 +1903,8 @@ func RunSync(args []string) (SyncResult, error) {
 		return result, err
 	}
 	result.DryRun = false
+	_ = telemetry.IncrementSyncs(homeDir)
+	TelemetryTrigger(homeDir)
 	return result, nil
 }
 
@@ -1909,8 +1916,8 @@ func restoreOpenCodeModelAssignmentsFromState(homeDir, workspaceDir string, scop
 	settingsPath := effectiveOpenCodeSettingsPath(homeDir, workspaceDir, scope, opencodeagent.NewAdapter())
 	if settingsPath != "" {
 		if _, err := os.Stat(settingsPath); err == nil {
-			snapshot, err := opencodeactivation.ResolveEffectiveConfigForHome(homeDir, filepath.Dir(settingsPath))
-			if err == nil && snapshot.Path == settingsPath {
+			snapshot, err := opencodeactivation.ReadConfigSnapshot(settingsPath)
+			if err == nil {
 				presence = snapshot.Assignments
 			}
 		}
@@ -2003,6 +2010,11 @@ func hasManagedPiCodeGraphManifest(homeDir string) bool {
 func RenderSyncReport(result SyncResult) string {
 	var b strings.Builder
 	backgroundReport := func() {
+		for _, check := range result.Verify.Checks {
+			if check.Status == verify.CheckStatusWarning {
+				fmt.Fprintf(&b, "WARNING: %s\n", check.Error)
+			}
+		}
 		if containsAgent(result.Agents, model.AgentPi) && result.PiBackground.Intent != "" {
 			fmt.Fprintf(&b, "Pi background intent: %s (policy effective: %s)\n", result.PiBackground.Intent, result.PiBackground.Effective)
 			if !result.PiBackground.managed {

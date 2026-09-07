@@ -159,6 +159,10 @@ These are parent-orchestrator routing boundaries. Use the smallest useful topolo
 9. **Post-verify review rule**: after `sdd-verify` completes successfully, if the changes are not trivial and no valid content-bound receipt exists, the orchestrator MUST define and invoke the selected 4R lenses or Judgment Day reviewer dynamic subagents (`review-*` or `jd-judge-*`) to run a complete review before proceeding to `sdd-archive` or completing the cycle. Do not skip or bypass this review phase.
 10. **Normalization ordering rule**: before review START and its identity freeze, run every source-mutating normalizer, then re-snapshot the candidate and review those exact bytes, paths, and modes. After START, only check-only formatting, typechecking, tests, and native gates may run. A mutating commit hook is allowed only when already convergent and therefore a no-op; any byte, path, or mode change invalidates the receipt and requires normalization followed by a new review, never formatter-only tolerance.
 
+#### Delegated Verification Gate (MANDATORY)
+
+{{GENTLE_AI_SDD_SECTION:Delegated Verification Gate (MANDATORY)}}
+
 #### Native Checking Contract
 
 - Final source-mutating normalization happens before functional verification and candidate freeze.

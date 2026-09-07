@@ -455,7 +455,7 @@ func TestRunArgsDispatchesCompactReviewFacadeBeforePlatformValidation(t *testing
 	if err := RunArgs([]string{"review", "--help"}, &output); err != nil {
 		t.Fatalf("RunArgs(review --help) error = %v", err)
 	}
-	if !strings.Contains(output.String(), "review <acknowledge-approved|capture-result|capture-correction-plan|capture-refuter|capture-unachievable|capture-validation|lens-context|capabilities|start|validate|status|repair|invalidate|abandon|recover|reclaim|store-reset|inspect-authority|inspect-candidate|reopen-results|schema|opencode-transport>") {
+	if !strings.Contains(output.String(), "review <acknowledge-approved|capture-result|capture-correction-plan|capture-refuter|capture-unachievable|capture-validation|lens-context|capabilities|assess|start|validate|status|repair|invalidate|abandon|recover|reclaim|store-reset|inspect-authority|inspect-candidate|reopen-results|schema|opencode-transport>") {
 		t.Fatalf("compact review help missing:\n%s", output.String())
 	}
 	for _, retired := range []string{"preserve-result", "dispose-result"} {
@@ -826,7 +826,9 @@ func buildAppCandidateBinary(t *testing.T) string {
 	if runtime.GOOS == "windows" {
 		binary += ".exe"
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	// A cold build of the whole binary on a shared CI runner can exceed
+	// 30s; the cap only guards against a hung toolchain, not build speed.
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 	command := exec.CommandContext(ctx, "go", "build", "-o", binary, "../../cmd/gentle-ai")
 	if output, err := command.CombinedOutput(); err != nil {

@@ -1141,33 +1141,12 @@ func TestClaudeSDDWorkflowRequiresSessionPreflight(t *testing.T) {
 	content := MustRead("claude/sdd-orchestrator-workflow.md")
 
 	for _, required := range []string{
-		"### SDD Session Preflight (HARD GATE)",
-		"Before executing ANY SDD command or natural-language SDD request",
-		"**Execution mode**",
-		"**Artifact store**",
-		"**Chained PR strategy**",
-		"**Review budget**",
-		"`openspec/config.yaml`, existing SDD artifacts, previous `sdd-init` results, or installed SDD assets do NOT satisfy session preflight",
-		"Use the built-in `AskUserQuestion` tool for SDD Session Preflight",
-		"only when it is available in the current interactive runtime and all four groups are exactly representable",
-		"follow the Lossless Blocking Prompts fallback in the orchestrator rule and STOP",
-		"When the native route is representable, ask all four preflight groups in one single `AskUserQuestion` tool call",
-		"Do NOT run this as a sequential wizard",
-		"Do NOT issue four separate `AskUserQuestion` tool calls",
-		"Match the user's current language and active persona",
-		"Do NOT show option codes",
-		"Do NOT show canonical values",
-		"map the selected human labels to canonical values internally",
-		"1. Pace: Interactive, Automatic.",
-		"2. Artifacts: OpenSpec, Engram, Both.",
-		"3. PRs: Ask me, Single PR, Auto.",
-		"4. Review: 400 lines, 800 lines, Other.",
+		"Session preflight is projected here by the installer from the shared canonical authority",
+		"### SDD Init Guard (MANDATORY)",
 		"### SDD Entry Routing (MANDATORY)",
 		"Never launch `sdd-apply` just because the user asked to implement a feature",
 		"Only launch `sdd-apply` when all are true",
 		"If any dependency is missing, STOP and propose `/gentle-sdd-new` or `/gentle-sdd-ff`; do not implement",
-		"or `hybrid` when Engram is callable",
-		"Both -> `hybrid`",
 	} {
 		if !strings.Contains(content, required) {
 			t.Fatalf("claude/sdd-orchestrator-workflow.md missing required preflight wording %q", required)
@@ -1175,8 +1154,10 @@ func TestClaudeSDDWorkflowRequiresSessionPreflight(t *testing.T) {
 	}
 
 	for _, forbidden := range []string{
-		"`question` tool",
-		"groups as tabs",
+		"`question` tool", "AskUserQuestion", "groups as tabs",
+		"### SDD Session Preflight (HARD GATE)",
+		"gentle-ai:sdd-session-preflight", "Required preflight choices:",
+		"1. Pace:", "Both ->", "800 lines", "Other", "all four",
 	} {
 		if strings.Contains(content, forbidden) {
 			t.Fatalf("claude/sdd-orchestrator-workflow.md must use Claude Code's AskUserQuestion mechanics, not OpenCode wording %q", forbidden)
@@ -1201,11 +1182,10 @@ func TestClaudeSDDWorkflowRequiresSessionPreflight(t *testing.T) {
 		}
 	}
 
-	preflight := strings.Index(content, "### SDD Session Preflight (HARD GATE)")
-	routing := strings.Index(content, "### SDD Entry Routing (MANDATORY)")
-	initGuard := strings.Index(content, "### SDD Init Guard (MANDATORY)")
-	if !(preflight < routing && routing < initGuard) {
-		t.Fatalf("claude/sdd-orchestrator-workflow.md section order must be preflight (%d) < entry routing (%d) < init guard (%d)", preflight, routing, initGuard)
+	routing := "### SDD Entry Routing (MANDATORY)"
+	initGuard := "### SDD Init Guard (MANDATORY)"
+	if strings.Count(content, routing) != 1 || strings.Count(content, initGuard) != 1 || strings.Index(content, routing) >= strings.Index(content, initGuard) {
+		t.Fatal("Claude projection template requires unique routing then init anchors")
 	}
 }
 
@@ -1261,7 +1241,6 @@ func TestSDDOrchestratorAssetsDefaultToAutomatic(t *testing.T) {
 func TestSDDFFCommandsHonorInteractiveMode(t *testing.T) {
 	for _, path := range []string{
 		"opencode/commands/sdd-ff.md",
-		"claude/commands/gentle-sdd-ff.md",
 	} {
 		t.Run(path, func(t *testing.T) {
 			content := MustRead(path)
@@ -3019,29 +2998,30 @@ func TestAntigravitySubagentsUseValidNativeTools(t *testing.T) {
 	}
 }
 
-// #3516: OpenCode can hand the plugin an empty or filesystem-root cwd, and the
-// Go side refuses `--cwd /`. The plugin has no JS/TS test harness, so this
-// pins the guard in its source: a root or empty cwd never renders as a
-// `--cwd` value; the continuation falls back to the `<repo>` placeholder and
-// the summary says so.
-func TestSDDTaskResultArtifactsPluginGuardsFilesystemRootCwd(t *testing.T) {
-	source, err := Read("opencode/plugins/sdd-task-result-artifacts.ts")
-	if err != nil {
-		t.Fatal(err)
+// #2855: cwd alone cannot identify the selected change and artifact store.
+// Initial and latched failures must offer guidance, never a guessed command
+// (including the old root/empty-cwd placeholder from #3516).
+func TestSDDTaskResultArtifactsPluginUsesCoordinatorGuidanceWithoutIdentity(t *testing.T) {
+	source := MustRead("opencode/plugins/sdd-task-result-artifacts.ts")
+	if got := strings.Count(source, "continuation: SDD_TASK_CONTINUATION_GUIDANCE"); got != 2 {
+		t.Fatalf("initial and latched failures must share safe guidance; got %d uses", got)
 	}
-	for _, want := range []string{
-		`function isFilesystemRoot`,
-		`function continuationCwd`,
-		`const cwd = continuationCwd(worktree, directory)`,
-		`--cwd <repo> --json`,
-		`replace <repo> with the repository root`,
-	} {
-		if !strings.Contains(source, want) {
-			t.Fatalf("SDD task plugin missing root-cwd guard %q", want)
+	for _, forbidden := range []string{"gentle-ai sdd-status", "<repo>", "replace <repo>"} {
+		if strings.Contains(source, forbidden) {
+			t.Errorf("SDD task plugin retains an identity-free command or placeholder: %q", forbidden)
 		}
 	}
-	if strings.Contains(source, "const cwd = worktree || directory") {
-		t.Fatal("SDD task plugin still renders whatever cwd OpenCode hands over")
+	for _, path := range []string{"opencode/sdd-orchestrator.md", "skills/_shared/sdd-phase-common.md"} {
+		consumer := MustRead(path)
+		for _, want := range []string{
+			"follow its `continuation` exactly once",
+			"execute it only when supplied as a command",
+			"Never turn guidance into a guessed command",
+		} {
+			if !strings.Contains(consumer, want) {
+				t.Errorf("%s missing safe continuation consumption: %q", path, want)
+			}
+		}
 	}
 }
 

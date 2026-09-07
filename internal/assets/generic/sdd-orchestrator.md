@@ -87,6 +87,10 @@ These are parent-orchestrator routing boundaries. Use the smallest useful topolo
 6. **Optional SDD rule**: propose SDD only when durable proposal/spec/design/tasks materially reduce substantial ambiguity. Select SDD only after an explicit request or accepted proposal; risk alone never forces SDD.
 7. **Large-Context Window Rule (Gemini/Antigravity)**: Large context window capacity (e.g. 1M+ tokens) NEVER overrides delegation rules. Even if the active model can hold many files in memory, processing 4+ read files or 2+ write files in the parent thread is strictly forbidden and MUST be delegated to subagents.
 
+#### Delegated Verification Gate (MANDATORY)
+
+{{GENTLE_AI_SDD_SECTION:Delegated Verification Gate (MANDATORY)}}
+
 #### Native Checking Contract
 
 - Final source-mutating normalization happens before functional verification and candidate freeze.
