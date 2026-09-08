@@ -339,6 +339,14 @@ If the user doesn't specify, default to **Automatic**. After scope approval, exp
 
 Cache the mode choice for the session — do not ask again unless the user explicitly requests a mode change.
 
+In **Interactive** mode, between phases:
+
+1. Summarize the completed phase: `status`, artifact references, key decisions, risks, and `next_recommended`.
+2. List what the next phase would do if the user continues.
+3. Ask whether the user wants to continue, adjust, or stop — using `ask_question` when available, plain chat fallback otherwise.
+4. STOP and wait for user input before invoking the next dynamic subagent.
+5. If the user asks to adjust, incorporate the feedback into the next phase context or rerun the appropriate phase.
+
 
 {{GENTLE_AI_RESEARCH_LIFECYCLE}}
 
@@ -382,7 +390,7 @@ The gatekeeper runs in addition to the Review Workload Guard and the Mandatory D
 
 ### Artifact Store Mode
 
-When the user invokes `/sdd-new`, `/sdd-ff`, or `/sdd-continue` (or an equivalent natural-language request) for the first time in a session, ALSO ASK which artifact store they want for this change:
+On the first `/sdd-new`, `/sdd-ff`, or `/sdd-continue` (or an equivalent natural-language request) in a session, ALSO ASK which artifact store they want for this change:
 
 - **`engram`**: Fast, no files created. Artifacts live in engram only. Best for solo work and quick iteration. Note: re-running a phase overwrites the previous version (no history).
 - **`openspec`**: File-based. Creates `openspec/` directory with full artifact trail. Committable, shareable with team, full git history.
