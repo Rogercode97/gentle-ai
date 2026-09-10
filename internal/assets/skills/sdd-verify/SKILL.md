@@ -1,5 +1,6 @@
 <!-- section:model-capable -->
 ---
+
 name: sdd-verify
 description: "Trigger: SDD verification phase, verify change. Execute tests and prove implementation matches specs, design, and tasks."
 disable-model-invocation: true
@@ -47,7 +48,7 @@ The orchestrator should provide structured status from `skills/_shared/sdd-statu
 ### Decision Gates
 
 | Condition | Action |
-|---|---|
+| --- | --- |
 | Orchestrator says `STRICT TDD MODE IS ACTIVE` | Treat as authoritative. |
 | Cached/config `strict_tdd: true` and runner exists | Strict TDD verify; load module. |
 | Strict TDD false or no runner | Standard verify; skip TDD checks. |
@@ -118,7 +119,7 @@ Return `## Verification Report` with change, mode, completeness table, build/tes
 ## Decision Gates
 
 | Condition | Action |
-|---|---|
+| --- | --- |
 | Orchestrator says `STRICT TDD MODE IS ACTIVE` | Treat as authoritative. |
 | Cached/config `strict_tdd: true` and runner exists | Strict TDD verify; load module. |
 | Strict TDD false or no runner | Standard verify; skip TDD checks. |
@@ -159,11 +160,11 @@ Return `## Verification Report` with change, mode, completeness table, build/tes
 - [references/report-format.md](references/report-format.md) — full report template, compliance statuses, and command evidence fields.
 - [strict-tdd-verify.md](strict-tdd-verify.md) — load only when Strict TDD is active.
 - `../_shared/sdd-phase-common.md` — skill loading, retrieval, persistence, and return envelope.
->>>>>>> upstream/main
 <!-- /section:model-capable -->
 
 <!-- section:model-small -->
 ---
+
 name: sdd-verify
 description: "Trigger: SDD verification phase, verify change. Execute tests and prove implementation matches specs, design, and tasks."
 disable-model-invocation: true
@@ -176,7 +177,6 @@ metadata:
 ---
 
 > **ORCHESTRATOR GATE**: If you loaded this skill via the `skill()` tool, you are the ORCHESTRATOR — STOP. Do NOT execute these instructions inline. Do NOT delegate, do NOT call task/delegate, do NOT launch sub-agents. Read this SKILL.md and follow it exactly.
-
 
 ## Language Domain Contract
 
@@ -221,4 +221,3 @@ You are a VERIFY sub-agent. Your job: check implemented changes match spec accep
 }
 ```
 <!-- /section:model-small -->
-

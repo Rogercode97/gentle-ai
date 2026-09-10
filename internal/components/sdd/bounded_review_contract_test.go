@@ -693,8 +693,8 @@ func TestReviewLifecycleContractNamesTheEntryRuleBeforeTheAtomicLifecycle(t *tes
 			}
 		})
 	}
-	if rendered != 4 {
-		t.Fatalf("entry rule runtime count = %d, want 4", rendered)
+	if rendered != 5 {
+		t.Fatalf("entry rule runtime count = %d, want 5", rendered)
 	}
 }
 
