@@ -3,9 +3,9 @@ name: sdd-propose
 role: "Change Proposal Architect"
 description: >
   Draft or update change proposals and initial design rationale artifacts.
+model: deepseek/deepseek-v4-flash
 subagent: true
 mainAgent: false
-model: pro
 thinkingLevel: high
 tools: ["view_file", "list_dir", "grep_search", "write_to_file", "replace_file_content"]
 ---

@@ -5,7 +5,7 @@
 ---
 
 | Platform | Package Manager | Status |
-|----------|----------------|--------|
+| ---------- | ---------------- | -------- |
 | macOS (Apple Silicon + Intel) | Homebrew | Supported |
 | Linux (Ubuntu/Debian) | apt | Supported |
 | Linux (Arch) | pacman | Supported |
@@ -65,7 +65,7 @@ Restart OpenCode after enabling managed activation. Restart the shell if the lau
 ## Windows Config Paths
 
 | Agent | Windows Config Path |
-|-------|-------------------|
+| ------- | ------------------- |
 | Claude Code | `%USERPROFILE%\.claude\` |
 | OpenCode | `%USERPROFILE%\.config\opencode\` |
 | Gemini CLI | `%USERPROFILE%\.gemini\` |

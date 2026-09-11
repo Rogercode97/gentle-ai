@@ -3,9 +3,9 @@ name: sdd-apply
 role: "TDD Code Implementer"
 description: >
   Implement code changes from task definitions following spec and design.
+model: deepseek/deepseek-v4-flash
 subagent: true
 mainAgent: false
-model: pro
 thinkingLevel: medium
 tools: ["view_file", "list_dir", "grep_search", "write_to_file", "replace_file_content", "run_command"]
 ---

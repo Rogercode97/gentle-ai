@@ -3,9 +3,9 @@ name: review-risk
 role: "Security Risk Auditor"
 description: >
   Adversarial review lens evaluating security risks, data exposure, and permission flaws.
+model: deepseek/deepseek-v4-flash
 subagent: true
 mainAgent: false
-model: pro
 thinkingLevel: high
 tools: ["view_file", "list_dir", "grep_search"]
 ---

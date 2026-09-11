@@ -3,9 +3,9 @@ name: sdd-research
 role: "External Evidence Researcher"
 description: >
   Collect auditable external evidence for a selected SDD research lane. Read-only documentation and web research.
+model: deepseek/deepseek-v4-flash
 subagent: true
 mainAgent: false
-model: flash
 thinkingLevel: medium
 tools: ["search_web", "read_url_content"]
 ---

@@ -3,9 +3,9 @@ name: sdd-archive
 role: "Lifecycle Archive Executor"
 description: >
   Close out an SDD change, finalize documentation, and archive state.
+model: deepseek/deepseek-v4-flash
 subagent: true
 mainAgent: false
-model: flash_lite
 thinkingLevel: minimal
 tools: ["view_file", "list_dir", "grep_search", "write_to_file", "replace_file_content", "run_command"]
 ---

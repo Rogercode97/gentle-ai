@@ -3,9 +3,9 @@ name: jd-judge-a
 role: "Adversarial Code Judge A"
 description: >
   Adversarial code reviewer — blind judge A for judgment-day parallel review protocol.
+model: deepseek/deepseek-v4-flash
 subagent: true
 mainAgent: false
-model: pro
 thinkingLevel: high
 tools: ["view_file", "list_dir", "grep_search"]
 ---

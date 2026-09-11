@@ -13,7 +13,7 @@ Pi support installs the Gentleman harness as Pi packages, then lets Pi own its o
 gentle-ai install --agent pi
 ```
 
-3. Start Pi in your project:
+1. Start Pi in your project:
 
 ```bash
 pi

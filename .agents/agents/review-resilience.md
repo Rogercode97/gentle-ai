@@ -3,9 +3,9 @@ name: review-resilience
 role: "Resilience Reviewer"
 description: >
   Adversarial review lens evaluating performance, resource leaks, and fault tolerance.
+model: deepseek/deepseek-v4-flash
 subagent: true
 mainAgent: false
-model: pro
 thinkingLevel: high
 tools: ["view_file", "list_dir", "grep_search"]
 ---

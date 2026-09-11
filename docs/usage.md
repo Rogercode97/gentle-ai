@@ -204,7 +204,7 @@ If you choose to install several tools from this tap, run `brew trust gentleman-
 **Self-update prompt behavior** (changed in v1.x slice 5 — `GENTLE_AI_CONFIRM_UPDATE` removed):
 
 | Situation | Behavior |
-|-----------|----------|
+| ----------- | ---------- |
 | Interactive terminal (TTY) | Always prompts `Apply now? [Y/n]`. Empty Enter accepts. |
 | Non-TTY (CI, pipe, script) | Auto-declines — never hangs. |
 | `GENTLE_AI_YES=1` | Auto-accepts without prompting (for scripted upgrades). This variable is inherited by subprocesses, so scope it to a single invocation when needed (e.g. `GENTLE_AI_YES=1 gentle-ai …`). |
@@ -229,7 +229,7 @@ gentle-ai doctor
 Checks performed:
 
 | Check | What it verifies |
-|-------|-----------------|
+| ------- | ----------------- |
 | Tool binaries | Required tools present on `PATH`; shadow detection (wrong binary resolves first) |
 | `state.json` validity | Parses `~/.gentle-ai/state.json` and reports any schema/corruption issues |
 | Engram MCP reachability | Confirms the Engram MCP server responds |
@@ -352,7 +352,6 @@ sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
 Use `HOMEBREW_NO_SANDBOX_LINUX=1 brew upgrade gentle-ai` only as a final
 workaround when your distro policy forbids the namespace settings; it disables
 Homebrew's Linux sandbox for that command.
-
 
 ---
 

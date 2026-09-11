@@ -71,7 +71,7 @@ and report on in the first place.
 ## HTTP API
 
 | Endpoint | Method | Auth | Notes |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `/v1/events` | POST | none | Body ≤ 4 KiB, strict schema validation, per-IP rate limit. `202` on accept, `400` invalid, `413` oversize, `429` rate-limited. |
 | `/v1/summary` | GET | `Authorization: Bearer <token>` | Returns the JSON described below. `401` without a valid token. |
 | `/healthz` | GET | none | Liveness check for the reverse proxy / process supervisor. |
@@ -266,7 +266,7 @@ HTTPS, and a `:443` block with the Let's Encrypt certificate paths and
 domain configured this way, so this kit does not use one.
 
 | File | Purpose |
-|---|---|
+| --- | --- |
 | `apache/telemetry-vhost.conf.tmpl` | Template for the two `<VirtualHost>` blocks (`:80` and `:443`), mirroring the existing pattern: proxies `/v1/`, `/healthz`, and (with `--with-grafana`) `/grafana/` to loopback, asserts `X-Forwarded-For` from Apache itself, force-HTTPS except for the ACME challenge path, and a supplementary access log that omits the client address for `/v1/`. `__DOMAIN__` is substituted by `install.sh --domain`. Not applied automatically — see below. |
 | `gentle-telemetry.service` | systemd unit: runs as the static `gentle-telemetry` system user (created by `install.sh`), `StateDirectory=gentle-telemetry`, and a hardened sandbox (no new privileges, restricted syscalls/namespaces/capabilities, private `/tmp` and devices). See [Why a static user, not `DynamicUser`](#why-a-static-user-not-dynamicuser). |
 | `gentle-telemetry-backup` + `.service` + `.timer` | Nightly `sqlite3 .backup` snapshot uploaded via `rclone copy` to a configurable remote, then deleted locally. The logic lives in the standalone `gentle-telemetry-backup` script (installed to `/usr/local/bin`), not inline in the unit's `ExecStart` — systemd expands `$VAR`/`${VAR}` there using its own environment before the shell runs, which would mangle a script's local variables. The unit runs as root for simplicity: it just needs read access to the collector's state directory. |
@@ -345,6 +345,7 @@ when every other vhost on the box is also `*`).
    (`telemetry`, in this doc) pointing at the VPS's IP. Confirm with
    `dig +short telemetry.example.com`.
 2. **Issue the certificate**, in this exact order:
+
    ```
    cp -a /etc/apache2/conf.d/includes/post_virtualhost_global.conf \
          /etc/apache2/conf.d/includes/post_virtualhost_global.conf.bak-$(date +%Y%m%dT%H%M%SZ)
@@ -360,6 +361,7 @@ when every other vhost on the box is also `*`).
    sed -n '/# --- BEGIN :443 VHOST ---/,/# --- END :443 VHOST ---/p' \
        /root/telemetry-vhost.conf.rendered >> /etc/apache2/conf.d/includes/post_virtualhost_global.conf
    ```
+
    The template's `:80` block serves the ACME challenge from
    `/var/www/gentle-telemetry-acme` (confirm this matches how the existing
    vhosts on this box serve `/.well-known/acme-challenge/` — this kit
@@ -367,6 +369,7 @@ when every other vhost on the box is also `*`).
    detail directly, only mirror the pattern as described). Add a renewal
    hook so Apache picks up the renewed certificate, matching this server's
    existing pattern:
+
    ```
    cat > /etc/letsencrypt/renewal-hooks/deploy/reload-httpd.sh <<'EOF'
    #!/bin/sh
@@ -374,15 +377,20 @@ when every other vhost on the box is also `*`).
    EOF
    chmod +x /etc/letsencrypt/renewal-hooks/deploy/reload-httpd.sh
    ```
+
 3. **Apply and verify the full config**:
+
    ```
    apachectl configtest
    systemctl reload httpd
    ```
+
 4. **Verify**:
+
    ```
    curl -I https://telemetry.example.com/healthz
    ```
+
    expect `200`.
 5. Set `GENTLE_TELEMETRY_BACKUP_REMOTE` in `/etc/gentle-telemetry/backup.env`
    to an `rclone` remote:path, then
@@ -473,7 +481,7 @@ provisioned via `deploy/telemetry/grafana/provisioning/dashboards/telemetry.yaml
 into the "Gentle AI" folder. Its panels:
 
 | Panel | What it shows |
-|---|---|
+| --- | --- |
 | Unique installs per month | `SELECT substr(day,1,7) AS month, COUNT(DISTINCT key) ... GROUP BY month` over `rollups_daily.active_install` — matches `/v1/summary`'s `installs_per_month`. |
 | Weekly active installs | Same idea, bucketed by SQLite's `strftime('%W')` (Monday-based week-of-year). This can disagree with the API's ISO week numbering right at a year boundary — read it as a trend, not a byte-for-byte match to `/v1/summary`. |
 | Agent / component distribution | Install-days over the trailing 30 rolled-up days, from `rollups_daily.agent`/`.component` — same install-days semantics as `/v1/summary` (see [above](#get-v1summary)), not distinct installs. |

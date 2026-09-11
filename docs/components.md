@@ -7,7 +7,7 @@
 ## Components
 
 | Component | ID | Description |
-|-----------|-----|-------------|
+| ----------- | ----- | ------------- |
 | Engram™ | `engram` | Persistent cross-session memory via MCP — auto-detection of project name, full-text search, git sync, project consolidation. See [engram repo](https://github.com/Gentleman-Programming/engram) |
 | SDD | `sdd` | Spec-Driven Development workflow (10 phases, including `sdd-onboard`) — the agent handles SDD organically when the task warrants it, or when you ask; you don't need to learn the commands |
 | Skills | `skills` | Curated coding skill library |
@@ -47,7 +47,7 @@ gga install
 #### SDD (Spec-Driven Development)
 
 | Skill | ID | Description |
-|-------|-----|-------------|
+| ------- | ----- | ------------- |
 | SDD Init | `sdd-init` | Bootstrap SDD context in a project |
 | SDD Explore | `sdd-explore` | Investigate codebase before committing to a change |
 | SDD Propose | `sdd-propose` | Create change proposal with intent, scope, approach |
@@ -63,7 +63,7 @@ gga install
 #### Foundation
 
 | Skill | ID | Description |
-|-------|-----|-------------|
+| ------- | ----- | ------------- |
 | Go Testing | `go-testing` | Go testing patterns including Bubbletea TUI testing |
 | Skill Creator | `skill-creator` | Create new AI agent skills following the Agent Skills spec |
 | Skill Improver | `skill-improver` | Audit and improve existing skills against the repository style guide |
@@ -87,7 +87,7 @@ For framework-specific skills (React 19, Angular, TypeScript, Tailwind 4, Zod 4,
 ## Presets
 
 | Preset | ID | What's Included |
-|--------|-----|-----------------|
+| -------- | ----- | ----------------- |
 | Dev Stack + Polish | `full-gentleman` | All components (Engram + SDD + Skills + Context7 + GGA + Permissions + Theme) + all skills |
 | Dev Stack | `ecosystem-only` | Core components (Engram + SDD + Skills + Context7 + GGA) + all skills |
 | Memory Only | `minimal` | Engram + SDD skills only |

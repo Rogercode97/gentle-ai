@@ -3,9 +3,9 @@ name: sdd-spec
 role: "Technical Specification Author"
 description: >
   Write or update technical specifications and contract requirements.
+model: deepseek/deepseek-v4-flash
 subagent: true
 mainAgent: false
-model: pro
 thinkingLevel: medium
 tools: ["view_file", "list_dir", "grep_search", "write_to_file", "replace_file_content"]
 ---

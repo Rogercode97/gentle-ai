@@ -3,9 +3,9 @@ name: review-reliability
 role: "Reliability Reviewer"
 description: >
   Adversarial review lens evaluating correctness, edge cases, error handling, and test coverage.
+model: deepseek/deepseek-v4-flash
 subagent: true
 mainAgent: false
-model: pro
 thinkingLevel: high
 tools: ["view_file", "list_dir", "grep_search"]
 ---
