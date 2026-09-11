@@ -415,6 +415,8 @@ Cache the chain strategy for the session. Add it as `chain_strategy` to `sdd-tas
 
 When delivery planning yields chained PRs, treat `chained-pr` (registry skill `gentle-ai-chained-pr`) as a required skill match: resolve it by registry name through this template's existing skill-resolution mechanism (the same one it already uses to pass skills to phases) and ensure the `sdd-tasks` and `sdd-apply` phases load and follow it BEFORE planning or creating any PR. Do not hardcode the skill path; defer resolution to that mechanism.
 
+Whenever delegating `sdd-tasks`, the orchestrator MUST resolve and inject both `work-unit-commits` (registry skill `gentle-ai-work-unit-commits`) and `chained-pr` (registry skill `gentle-ai-chained-pr`) under `## Skills to load before work` before task breakdown begins.
+
 ### Dependency Graph
 
 ```text
@@ -440,6 +442,8 @@ If it says `Chained PRs recommended: Yes`, `400-line budget risk: High`, estimat
 - **`exception-ok`**: Continue, but tell `sdd-apply` this run uses `size:exception`.
 
 Any other `delivery_strategy` value is invalid. Do NOT pick the nearest branch and do NOT proceed: STOP, report the unrecognised value, and re-collect the delivery strategy before `sdd-apply` runs.
+
+The orchestrator MUST delegate `sdd-apply` strictly in single Work Unit batches bounded to <=400 changed lines (`additions + deletions`). Monolithic task delegation across multiple work units exceeding 400 lines in a single dispatch is forbidden. Subsequent units are deferred to future apply dispatches.
 
 Automatic mode does not override this guard. Always include the resolved `delivery_strategy` and `chain_strategy` in `sdd-apply` dynamic subagent context.
 
@@ -581,3 +585,43 @@ DAG state is tracked in Engram under `sdd/{change-name}/state`. Update it after 
 ## Recovery Rule
 
 {{GENTLE_AI_SDD_SECTION:Recovery Rule}}
+
+### 4R & Judgment Day Review Execution Protocol (MANDATORY)
+
+To guarantee software quality and resilience before archiving or completing any SDD change:
+
+1. **4R Bounded Review Execution**:
+   - Immediately after `sdd-verify` completes successfully (and for non-trivial changes), the orchestrator MUST invoke the 4R review lens subagents (`review-*`).
+   - Invoke them in parallel using `invoke_subagent`.
+   - If findings are reported by any lens, invoke `review-refuter` to validate findings before logging to the review ledger.
+
+2. **Judgment Day (Blind Dual Review)**:
+   - For changes larger than 400 lines, security-sensitive edits, or hot-path architecture changes, activate the Judgment Day protocol.
+   - Invoke `jd-judge-a` and `jd-judge-b` concurrently via `invoke_subagent`.
+   - Compare their independent verdicts; if a discrepancy exists, invoke `review-refuter` to arbitrate the final ledger entries.
+
+3. **Archive Gate**:
+   - The orchestrator MUST NOT invoke `sdd-archive` or mark a change complete until the 4R or Judgment Day review has completed and all critical findings are resolved.
+
+### Lifecycle State Auto-Detection & Intent Mapping (MANDATORY)
+
+To prevent getting stuck or losing context during multi-phase workflows:
+
+1. **State Inspection**:
+   - At the beginning of any turn or natural language request, the orchestrator MUST check the current change state (via Engram `mem_search`, OpenSpec state, or `.agents/`).
+   - Identify the exact active stage:
+     - `uninitialized` → Suggest/invoke `sdd-init` or `sdd-onboard`.
+     - `explored` → Proceed to `sdd-propose`.
+     - `planning` (proposal/spec/design exists) → Complete `sdd-tasks`.
+     - `ready_to_apply` → Propose and wait for user approval, then invoke `sdd-apply`.
+     - `applied` → Invoke `sdd-verify`.
+     - `verified` → Invoke 4R lenses (`review-*`) or Judgment Day (`jd-judge-*`).
+     - `reviewed` → Invoke `sdd-archive`.
+
+2. **Linguistic Intent Mapping**:
+   - Map vague or natural language user prompts directly to the missing step based on the detected state:
+     - "sigamos" / "avanzá" / "siguiente paso" → Invoke the next sequential phase for the current state.
+     - "revisá" / "chequeá" → Invoke `sdd-explore` (if planning) or 4R `review-*` (if post-verify).
+     - "probá" / "testeá" → Invoke `sdd-verify`.
+     - "cerrá" / "terminá" → Invoke `sdd-archive`.
+
