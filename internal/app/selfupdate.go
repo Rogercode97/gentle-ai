@@ -24,6 +24,9 @@ var selfUpdateNowFn = func() time.Time { return time.Now() }
 // selfUpdateHomeDirFn resolves the user home directory; injected for tests.
 var selfUpdateHomeDirFn = os.UserHomeDir
 
+// isTermuxFn checks if the environment is Termux/Android; injected for tests.
+var isTermuxFn = system.IsTermux
+
 // Environment variable names for self-update control.
 // NOTE: GENTLE_AI_CONFIRM_UPDATE removed in slice 5 — prompt is now unconditional.
 const (
@@ -85,7 +88,7 @@ const selfUpdateTimeout = 7 * time.Second
 //  4. Proceed with update check
 func selfUpdate(ctx context.Context, version string, profile system.PlatformProfile, stdout io.Writer) error {
 	// Guard 0: [Termux Edition] Disable built-in updater entirely to protect the Android binary.
-	if system.IsTermux() {
+	if isTermuxFn() {
 		return nil
 	}
 	// Guard 1: loop prevention — already updated this invocation.
@@ -163,14 +166,7 @@ func selfUpdate(ctx context.Context, version string, profile system.PlatformProf
 	report := upgradeExecute(ctx, results, profile, homeDir, false, stdout)
 
 	// Check if upgrade succeeded.
-	var succeeded bool
-	for _, r := range report.Results {
-		if r.ToolName == "gentle-ai" && r.Status == upgrade.UpgradeSucceeded {
-			succeeded = true
-			break
-		}
-	}
-
+	_, succeeded := gentleAIUpgradeSucceeded(report)
 	if !succeeded {
 		// Upgrade failed or was skipped — non-fatal, continue with current binary.
 		return nil

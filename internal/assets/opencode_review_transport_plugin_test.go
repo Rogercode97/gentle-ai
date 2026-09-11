@@ -517,6 +517,9 @@ func runOpenCodeTransportPluginHarness(t *testing.T, modules map[string]string, 
 	if err != nil {
 		t.Skip("node is unavailable")
 	}
+	if strings.HasPrefix(relay, "#!/usr/bin/env node\n") {
+		relay = "#!" + node + "\n" + strings.TrimPrefix(relay, "#!/usr/bin/env node\n")
+	}
 	root := t.TempDir()
 	bin := filepath.Join(root, "bin")
 	if err := os.MkdirAll(bin, 0o700); err != nil {
