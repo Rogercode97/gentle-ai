@@ -1128,7 +1128,7 @@ func TestAntigravitySDDOrchestratorRequiresInteractivePauseGate(t *testing.T) {
 		"Interactive approval is phase-scoped",
 		"`continue`, `dale`, or `go on` approve only the immediate next phase",
 		"Do NOT run `/sdd-ff` or dynamic subagent chains back-to-back unless the cached execution mode is `auto` / `automatic`.",
-		"Before the `sdd-propose` phase in interactive mode, run a product/proposal question round",
+		"Before the `sdd-propose` phase, the orchestrator owns product discovery.",
 		"Technical artifacts and prompts remain English",
 	} {
 		if !strings.Contains(content, required) {

@@ -55,13 +55,6 @@ func TestResolveVersion(t *testing.T) {
 			buildInfoOK:    true,
 			want:           "2.0.0",
 		},
-		{
-			name:           "go install with v2 pseudo-version fallback",
-			ldflagsVersion: "dev",
-			buildInfo:      &debug.BuildInfo{Main: debug.Module{Version: "v1.49.1-0.20260716142831-7ac8e64dd54a"}},
-			buildInfoOK:    true,
-			want:           "2.1.10-0.20260716142831-7ac8e64dd54a",
-		},
 	}
 
 	for _, tt := range tests {

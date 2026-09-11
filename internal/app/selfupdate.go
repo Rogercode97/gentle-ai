@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -54,9 +55,20 @@ var promptFn = defaultPromptForUpdate
 // Default answer is Y (Enter = accept). If stdin is not a TTY, it auto-declines so
 // scripts and CI are never blocked. Uses isattyFn for testability.
 func defaultPromptForUpdate(stdout io.Writer, stdin io.Reader, currentVersion, latestVersion string) (bool, error) {
-	// [TERMUX EDITION] Disable built-in updater entirely to protect the Android binary.
-	_, _ = fmt.Fprintf(stdout, "\n[Termux Edition] Update available: %s → %s.\n⚠️ Auto-update is disabled for Android compatibility. Please run 'just update' in your fork directory to safely build the latest version.\n\n", currentVersion, latestVersion)
-	return false, nil
+	// Require a TTY; non-interactive environments silently decline.
+	if f, ok := stdin.(*os.File); !ok || !isattyFn(f.Fd()) {
+		return false, nil
+	}
+
+	_, _ = fmt.Fprintf(stdout, "Update available: %s → %s. Apply now? [Y/n]: ", currentVersion, latestVersion)
+
+	scanner := bufio.NewScanner(stdin)
+	if !scanner.Scan() {
+		return false, scanner.Err()
+	}
+	answer := strings.ToLower(strings.TrimSpace(scanner.Text()))
+	// Empty input (Enter) = accept default Y; "y"/"yes" explicit accept; anything else declines.
+	return answer == "" || answer == "y" || answer == "yes", nil
 }
 
 // selfUpdateTimeout is the maximum time allowed for the update check + upgrade.
@@ -66,11 +78,16 @@ const selfUpdateTimeout = 7 * time.Second
 // Returns nil on success or skip; errors are non-fatal (caller logs and continues).
 //
 // Guard evaluation order (per spec):
+//  0. system.IsTermux() → skip (protect Termux/Android binaries from upstream overwrite)
 //  1. GENTLE_AI_SELF_UPDATE_DONE=1 → skip (loop guard)
 //  2. GENTLE_AI_NO_SELF_UPDATE=1 → skip (opt-out)
 //  3. version == "dev" → skip (dev build)
 //  4. Proceed with update check
 func selfUpdate(ctx context.Context, version string, profile system.PlatformProfile, stdout io.Writer) error {
+	// Guard 0: [Termux Edition] Disable built-in updater entirely to protect the Android binary.
+	if system.IsTermux() {
+		return nil
+	}
 	// Guard 1: loop prevention — already updated this invocation.
 	if os.Getenv(envSelfUpdateDone) == "1" {
 		return nil

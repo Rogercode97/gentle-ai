@@ -10,19 +10,7 @@ metadata:
   delegate_only: true
 ---
 
-# SDD Archive Skill
-
-## Description
-
-Archive a completed SDD change by syncing delta specs to main specs and moving change folder.
-
-## Trigger
-
-Trigger phrases: sdd archive, or when the orchestrator launches archive after implementation and verification.
-
-## Instructions
-
-### Execution Role
+## Execution Role
 
 Confirm your role before acting. You are the dedicated `sdd-archive` sub-agent unless you loaded this skill directly through the `skill()` tool.
 
@@ -30,7 +18,7 @@ Confirm your role before acting. You are the dedicated `sdd-archive` sub-agent u
 - If you loaded this skill through the `skill()` tool, you are the orchestrator. Stop here and delegate to the dedicated `sdd-archive` sub-agent using your platform's delegation primitive (for example, `task(...)` or a sub-agent invocation).
 
 
-### Language Domain Contract
+## Language Domain Contract
 
 Generated technical artifacts default to English. Do not inherit the user's conversational language or the active persona's regional voice for SDD artifacts unless the user explicitly requests that artifact language or the project convention requires it.
 
@@ -38,11 +26,11 @@ If technical artifacts are explicitly requested in another language, use a neutr
 
 Public/contextual comments follow the target context language by default. Explicit user language or tone overrides win; otherwise use a neutral/professional register unless the target context clearly calls for another tone or regional variant.
 
-### Purpose
+## Purpose
 
 You are a sub-agent responsible for ARCHIVING. You merge delta specs into the main specs (source of truth), then move the change folder to the archive. You complete the SDD cycle.
 
-### What You Receive
+## What You Receive
 
 From the orchestrator:
 - Change name
@@ -51,7 +39,7 @@ From the orchestrator:
 - Explicit final-state facts for work completed after intermediate artifacts were persisted (verify warnings fixed in later commits, blockers resolved, updated test counts), when the orchestrator has them
 - Any explicit intentional archive override text from the user/orchestrator
 
-### Final-State Authority
+## Final-State Authority
 
 The archive report is the terminal record of the cycle. It describes the state of the change AT CLOSE, not the state at earlier points during the cycle. A future reader consults the archive to learn what actually shipped; a stale claim sends them to redo finished work — or to trust that something is pending when it already closed.
 
@@ -59,10 +47,9 @@ The archive report is the terminal record of the cycle. It describes the state o
 
 When sources disagree about a fact, rank them — most authoritative first:
 
-1. **Native review context** — structured status `reviewGate`, a terminal receipt, and post-apply gate context. These are informational observations; they never authorize, block, or govern archive or delivery.
-2. **The persisted tasks artifact** — completion visibility, per the Task Completion Gate below.
-3. **Explicit final-state facts in the orchestrator's launch prompt** — e.g. "these verify warnings were fixed in later commits", "this blocker was resolved and the gate passed". The launch prompt is the most recent account of the change and outranks intermediate snapshots.
-4. **`verify-report` and `apply-progress`** — intermediate snapshots. Lowest rank: valid history of what was true at their time, never evidence of final state.
+1. **The persisted tasks artifact** — completion visibility, per the Task Completion Gate below.
+2. **Explicit final-state facts in the orchestrator's launch prompt** — e.g. "these verify warnings were fixed in later commits", "this blocker was resolved and verification passed". The launch prompt is the most recent account of the change and outranks intermediate snapshots.
+3. **`verify-report` and `apply-progress`** — intermediate snapshots. Lowest rank: valid history of what was true at their time, never evidence of final state.
 
 Reporting rules that follow:
 
@@ -72,28 +59,24 @@ Reporting rules that follow:
 - Carry final numbers (test counts, warnings, open issues) from the highest-ranked source that covers them; do not copy numbers from `verify-report` or `apply-progress` when later work changed them.
 - Never merge distinct defects or failures into a single causal story. A cause is recorded as confirmed only with evidence; otherwise record the failure as undiagnosed.
 
-This hierarchy governs how the archive REPORTS facts. CRITICAL issues in `verify-report` still block archive with no prompt override (a claim that a CRITICAL was fixed requires re-running `sdd-verify`, not a prompt assertion), while review context remains informational and the Task Completion Gate below remains authoritative.
+This hierarchy governs how the archive REPORTS facts. CRITICAL issues in `verify-report` still block archive with no prompt override (a claim that a CRITICAL was fixed requires re-running `sdd-verify`, not a prompt assertion), and the Task Completion Gate below remains authoritative.
 
-### Execution and Persistence Contract
+## Execution and Persistence Contract
 
 > Follow **Section B** (retrieval) and **Section C** (persistence) from `skills/_shared/sdd-phase-common.md`.
 
-- **engram**: Read `sdd/{change-name}/proposal`, `sdd/{change-name}/spec`, `sdd/{change-name}/design`, `sdd/{change-name}/tasks`, and `sdd/{change-name}/verify-report` (all required). When `reviewGate` is present, read the exact `sdd/{change-name}/review/{transaction,ledger,receipt,gate-context}` topics as informational context; when it is absent, no review context exists to read. Record all observation IDs actually read in the archive report for traceability. Save as `sdd/{change-name}/archive-report`.
+- **engram**: Read `sdd/{change-name}/proposal`, `sdd/{change-name}/spec`, `sdd/{change-name}/design`, `sdd/{change-name}/tasks`, and `sdd/{change-name}/verify-report` (all required). Record all observation IDs actually read in the archive report for traceability. Save as `sdd/{change-name}/archive-report`.
 - **openspec**: Read and follow `skills/_shared/openspec-convention.md`. Perform merge and archive folder moves.
 - **hybrid**: Follow BOTH conventions — persist archive report to Engram (with observation IDs) AND perform filesystem merge + archive folder moves.
 - **none**: Return closure summary only. Do not perform archive file operations.
 
-### Review Context Is Informational
+### Archive Readiness
 
-Before any task reconciliation, spec sync, or archive move, require structured status. `reviewGate` is structurally absent when no review context was discovered and may be present when an earlier review left historical context.
+Before any task reconciliation, spec sync, or archive move, require structured status. Archive only when refreshed native SDD status reports `dependencies.archive: ready` and `nextRecommended: archive`. A post-verify `reviewOffer` is an invitation only and is never read as archive state.
 
-- **`reviewGate` absent**: archive proceeds under ordinary repository policy. A post-verify `reviewOffer` is an invitation, never a gate.
-- **`reviewGate` present**: read its transaction, ledger, receipt, and gate context only to report the observed review state. `allow`, pending, malformed, `scope-changed`, `invalidated`, and `escalated` are informational; none authorizes, blocks, or governs archive or delivery.
-- **Post-review final verification report delta**: native final-verify settlement may attest exact report bytes for traceability. It does not create an archive or delivery gate.
+The Task Completion Gate and strict independent verification decide whether archive can proceed; ordinary repository policy decides delivery.
 
-Do not treat `reviewGate`'s absence or result as a defect or as grounds to demand a receipt. The Task Completion Gate and strict verification decide whether archive can proceed; ordinary repository policy decides delivery.
-
-#### Task Completion Gate
+### Task Completion Gate
 
 `sdd-apply` is responsible for marking completed tasks in the persisted tasks artifact. `sdd-archive` is responsible for validating that the persisted artifact reflects the final state before closing the cycle.
 
@@ -110,7 +93,7 @@ If any implementation task remains unchecked (`- [ ]`):
 
 The archived audit trail MUST NOT contain stale unchecked tasks for completed work. Internal todo state is not enough; the persisted SDD task artifact is the source of truth for completion visibility.
 
-#### Strict-vs-OpenSpec Archive Policy
+### Strict-vs-OpenSpec Archive Policy
 
 OpenSpec permits archiving with incomplete artifacts or tasks after a user confirmation. gentle-ai is stricter by default:
 
@@ -119,12 +102,12 @@ OpenSpec permits archiving with incomplete artifacts or tasks after a user confi
 - `sdd-archive` does not own normal task completion. `sdd-apply` owns checkbox completion; archive may only perform exceptional mechanical reconciliation with proof from apply-progress and verify-report.
 - Missing proposal/spec/design artifacts should be reported. Archive may continue only when the user explicitly chooses an intentional partial archive and the archive report records what was missing.
 
-#### Action Context Guard
+### Action Context Guard
 
 - If structured status reports `actionContext.mode: workspace-planning`, STOP. Do not move workspace changes into repo-local archives or edit linked repos.
 - If `allowedEditRoots` is present, archive operations must stay inside those roots.
 
-### Mechanical Copy Contract (MANDATORY)
+## Mechanical Copy Contract (MANDATORY)
 
 Archival is a mechanical filesystem operation. File content MUST NEVER pass through the model's Read/Write path to be copied — a model that summarizes, truncates, or alters even one byte while reporting success corrupts the audit trail silently. The only acceptable copy mechanism is a native shell command (`cp -R`, `mv`, or `git mv`), verified by a structural readback.
 
@@ -133,12 +116,12 @@ Archival is a mechanical filesystem operation. File content MUST NEVER pass thro
 - The verbatim `diff -r` output MUST appear in the phase result. An empty `diff -r` (no differences) is the only passing evidence; any difference is a truncation or alteration and FAILS the phase. A skipped or missing `diff -r` also FAILS the phase — agent self-report is never sufficient.
 - If your platform's tool allowlist does not grant shell access, STOP and report `blocked` with the reason `shell access required for mechanical archive copy is unavailable` — do NOT fall back to Read/Write copying.
 
-### What to Do
+## What to Do
 
-#### Step 1: Load Skills
+### Step 1: Load Skills
 Follow **Section A** from `skills/_shared/sdd-phase-common.md`.
 
-#### Step 2: Sync Delta Specs to Main Specs
+### Step 2: Sync Delta Specs to Main Specs
 
 Do not start this step until the **Task Completion Gate** above passes.
 
@@ -148,7 +131,7 @@ Do not start this step until the **Task Completion Gate** above passes.
 
 **IF mode is `openspec` or `hybrid`:** For each delta spec in `openspec/changes/{change-name}/specs/`:
 
-##### If Main Spec Exists (`openspec/specs/{domain}/spec.md`)
+#### If Main Spec Exists (`openspec/specs/{domain}/spec.md`)
 
 **Mandatory Native Composition (#4119):** never Read the main spec and apply
 ADDED/MODIFIED/REMOVED/RENAMED sections yourself. A model-driven Read/Edit
@@ -180,7 +163,7 @@ gentle-ai sdd-archive-compose \
 - Only a zero exit is composition evidence. Include the command invocation
   in the phase result.
 
-##### If Main Spec Does NOT Exist
+#### If Main Spec Does NOT Exist
 
 The delta spec IS a full spec (not a delta). Copy it mechanically with the shell — do NOT Read the file and Write its content back, which routes bytes through the model and can truncate silently:
 
@@ -224,7 +207,7 @@ fi
 # Empty diff above is the only passing evidence; include verbatim output in the result.
 ```
 
-#### Step 3: Move to Archive
+### Step 3: Move to Archive
 
 **IF mode is `engram`:** Skip — there are no `openspec/` directories to move. The archive report in Engram serves as the audit trail.
 
@@ -235,16 +218,43 @@ fi
 ```bash
 # Run this block as one shell transaction so the EXIT trap remains active.
 # The snapshot is recursive and must be created before either move attempt.
+source="openspec/changes/{change-name}"
+destination="openspec/changes/archive/YYYY-MM-DD-{change-name}"
 snapshot_root="$(mktemp -d "${TMPDIR:-/tmp}/sdd-archive.XXXXXX")"
 trap 'rm -rf -- "$snapshot_root"' EXIT
-cp -R "openspec/changes/{change-name}" "$snapshot_root/source"
+cp -R "$source" "$snapshot_root/source"
 
 # Mechanical move (MANDATORY): git mv when tracked, mv otherwise
 mkdir -p openspec/changes/archive
-if git mv openspec/changes/{change-name} openspec/changes/archive/YYYY-MM-DD-{change-name}; then
+if [ -e "$destination" ] || [ -L "$destination" ]; then
+  printf 'archive destination collision: source %s and destination %s remain unchanged. Resolve the destination collision, then rerun this archive step.\n' "$source" "$destination" >&2
+  exit 1
+fi
+
+if git mv "$source" "$destination"; then
   :
 else
-  if mv openspec/changes/{change-name} openspec/changes/archive/YYYY-MM-DD-{change-name}; then
+  git_mv_status=$?
+  if [ -e "$source" ] || [ -L "$source" ]; then
+    :
+  else
+    printf 'git mv failed with status %s and source %s is absent; refusing plain mv fallback.\n' "$git_mv_status" "$source" >&2
+    exit "$git_mv_status"
+  fi
+  if diff -r "$snapshot_root/source" "$source"; then
+    fallback_source_diff_status=0
+  else
+    fallback_source_diff_status=$?
+  fi
+  if [ "$fallback_source_diff_status" -ne 0 ]; then
+    printf 'git mv failed with status %s and source %s changed; refusing plain mv fallback.\n' "$git_mv_status" "$source" >&2
+    exit "$git_mv_status"
+  fi
+  if [ -e "$destination" ] || [ -L "$destination" ]; then
+    printf 'archive destination collision: source %s and destination %s remain unchanged. Resolve the destination collision, then rerun this archive step.\n' "$source" "$destination" >&2
+    exit 1
+  fi
+  if mv "$source" "$destination"; then
     :
   else
     move_status=$?
@@ -253,13 +263,13 @@ else
 fi
 
 # The source must be gone before comparing the archived tree with its snapshot.
-if [ -e "openspec/changes/{change-name}" ] || [ -L "openspec/changes/{change-name}" ]; then
+if [ -e "$source" ] || [ -L "$source" ]; then
   printf 'archive move left the source directory in place\n' >&2
   exit 1
 fi
 
 # MANDATORY readback: only empty diff output passes.
-if diff -r "$snapshot_root/source" "openspec/changes/archive/YYYY-MM-DD-{change-name}"; then
+if diff -r "$snapshot_root/source" "$destination"; then
   diff_status=0
 else
   diff_status=$?
@@ -275,7 +285,7 @@ The `snapshot_root` is removed safely by the EXIT trap after the readback, inclu
 
 The portable destination guard rejects a destination that already exists before either move attempt; it does not provide an atomic cross-process no-clobber guarantee. Do not add a suffix, overwrite, merge, delete, or otherwise choose a destination automatically.
 
-#### Historical Malformed Nesting Recovery (Manual Only)
+### Historical Malformed Nesting Recovery (Manual Only)
 
 This guidance is only for the historical malformed shape `archive/YYYY-MM-DD-{change-name}/{change-name}/`. Run this block manually only after inspecting the paths:
 
@@ -296,7 +306,7 @@ mv "$nested_source" "$active_source"
 
 Never automatically delete, overwrite, or merge the outer archive directory. If the active source exists or is a symlink, the outer destination or nested source is not a real directory, or the shape is otherwise ambiguous, stop and resolve the paths manually. After the active source is restored and the collision is resolved, rerun this archive step.
 
-#### Step 4: Verify Archive
+### Step 4: Verify Archive
 
 **IF mode is `openspec` or `hybrid`:** The Mechanical Copy Contract above is the verification: the verbatim `diff -r` output from Steps 2 and 3 MUST appear in the phase result, and an empty diff is the only passing evidence. In addition, confirm:
 - [ ] Main specs updated correctly
@@ -312,7 +322,7 @@ A failed or skipped `diff -r` FAILS the phase regardless of the checkboxes above
 
 **IF mode is `none`:** Skip verification — no persisted artifacts.
 
-#### Step 5: Persist Archive Report
+### Step 5: Persist Archive Report
 
 **This step is MANDATORY — do NOT skip it.**
 
@@ -321,7 +331,7 @@ Follow **Section C** from `skills/_shared/sdd-phase-common.md`.
 - topic_key: `sdd/{change-name}/archive-report`
 - type: `architecture`
 
-#### Step 6: Return Summary
+### Step 6: Return Summary
 
 Return to the orchestrator:
 
@@ -368,4 +378,3 @@ Ready for the next change.
 - If `openspec/changes/archive/` doesn't exist, create it
 - Apply any `rules.archive` from `openspec/config.yaml`
 - Return envelope per **Section D** from `skills/_shared/sdd-phase-common.md`.
-
