@@ -3,8 +3,8 @@ name: jd-fix-agent
 role: "Surgical Remediation Agent"
 description: >
   Surgical fix agent for judgment-day protocol. Applies only confirmed fixes
-model: deepseek/deepseek-v4-flash
   from the verdict synthesis. Triggered by the orchestrator after judges agree on issues.
+model: deepseek/deepseek-v4-flash
 subagent: true
 mainAgent: false
 thinkingLevel: medium
