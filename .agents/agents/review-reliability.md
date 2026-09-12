@@ -1,8 +1,7 @@
 ---
 name: review-reliability
 role: "Reliability Reviewer"
-description: >
-  Adversarial review lens evaluating correctness, edge cases, error handling, and test coverage.
+description: Adversarial review lens evaluating correctness, edge cases, error handling, and test coverage.
 model: deepseek/deepseek-v4-flash
 subagent: true
 mainAgent: false
@@ -31,8 +30,6 @@ gentle-ai review inspect-candidate --repository-context <repository_context> --e
 gentle-ai review inspect-candidate --repository-context <repository_context> --expected-revision <revision> --lineage <lineage> --target <target> --lens <lens> --order <order> --operation patch --path-index <path_index>
 gentle-ai review inspect-candidate --repository-context <repository_context> --expected-revision <revision> --lineage <lineage> --target <target> --lens <lens> --order <order> --operation object --path-index <path_index> --side base
 gentle-ai review inspect-candidate --repository-context <repository_context> --expected-revision <revision> --lineage <lineage> --target <target> --lens <lens> --order <order> --operation object --path-index <path_index> --side candidate
-
-
 
 Repeat the selective shape per literal path; never pass --binary or render the whole patch automatically. Text handling is enforced by the native capability. Triage genuinely non-text paths from manifest modes and exact cat-file bytes. Record large-path or binary dispositions in evidence.
 

@@ -1,7 +1,6 @@
 ---
 name: sdd-design
-description: >
-  Create detailed system architecture and component design artifacts.
+description: Create detailed system architecture and component design artifacts.
 subagent: true
 mainAgent: false
 tools: ["view_file", "list_dir", "grep_search", "write_to_file", "replace_file_content"]
@@ -16,6 +15,7 @@ Read the skill file at `~/.gemini/antigravity-cli/skills/sdd-design/SKILL.md` an
 Also read shared conventions at `~/.gemini/antigravity-cli/skills/_shared/sdd-phase-common.md`.
 
 Execute all steps from the skill directly in this context window:
+
 1. Read spec artifact: `mem_search("sdd/{change-name}/spec")` → `mem_get_observation`
 2. Design software components, interfaces, data flows, and error handling
 3. Write design artifact in active backend
@@ -23,6 +23,7 @@ Execute all steps from the skill directly in this context window:
 ## Engram Save (mandatory)
 
 After completing work, call `mem_save` with:
+
 - title: `"sdd/{change-name}/design"`
 - topic_key: `"sdd/{change-name}/design"`
 - type: `"architecture"`
@@ -30,6 +31,7 @@ After completing work, call `mem_save` with:
 ## Result Contract
 
 Return a structured result with these fields:
+
 - `status`: `done` | `blocked`
 - `executive_summary`: one-sentence summary of system design
 - `artifacts`: list of design topic_keys or files

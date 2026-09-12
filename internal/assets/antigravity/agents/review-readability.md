@@ -1,7 +1,6 @@
 ---
 name: review-readability
-description: >
-  Adversarial review lens evaluating code readability, maintainability, and naming.
+description: Adversarial review lens evaluating code readability, maintainability, and naming.
 subagent: true
 mainAgent: false
 tools: ["view_file", "list_dir", "grep_search"]

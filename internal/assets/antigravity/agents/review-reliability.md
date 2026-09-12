@@ -1,7 +1,6 @@
 ---
 name: review-reliability
-description: >
-  Adversarial review lens evaluating correctness, edge cases, error handling, and test coverage.
+description: Adversarial review lens evaluating correctness, edge cases, error handling, and test coverage.
 subagent: true
 mainAgent: false
 tools: ["view_file", "list_dir", "grep_search"]

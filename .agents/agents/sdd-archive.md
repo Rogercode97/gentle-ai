@@ -1,8 +1,7 @@
 ---
 name: sdd-archive
 role: "Lifecycle Archive Executor"
-description: >
-  Close out an SDD change, finalize documentation, and archive state.
+description: Close out an SDD change, finalize documentation, and archive state.
 model: deepseek/deepseek-v4-flash
 subagent: true
 mainAgent: false
@@ -19,6 +18,7 @@ Read the skill file at `~/.gemini/antigravity-cli/skills/sdd-archive/SKILL.md` a
 Also read shared conventions at `~/.gemini/antigravity-cli/skills/_shared/sdd-phase-common.md`.
 
 Execute all steps from the skill directly in this context window:
+
 1. Read verify report and task completion state
 2. Consolidate final change documentation
 3. Archive change state in active backend
@@ -26,6 +26,7 @@ Execute all steps from the skill directly in this context window:
 ## Result Contract
 
 Return a structured result with these fields:
+
 - `status`: `done` | `blocked`
 - `executive_summary`: one-sentence summary of archived change
 - `artifacts`: list of archived topic_keys or files

@@ -1,8 +1,7 @@
 ---
 name: sdd-apply
 role: "TDD Code Implementer"
-description: >
-  Implement code changes from task definitions following spec and design.
+description: Implement code changes from task definitions following spec and design.
 model: deepseek/deepseek-v4-flash
 subagent: true
 mainAgent: false
@@ -19,6 +18,7 @@ Read the skill file at `~/.gemini/antigravity-cli/skills/sdd-apply/SKILL.md` and
 Also read shared conventions at `~/.gemini/antigravity-cli/skills/_shared/sdd-phase-common.md`.
 
 Execute all steps from the skill directly in this context window:
+
 1. Read tasks artifact (required): `mem_search("sdd/{change-name}/tasks")` → `mem_get_observation`
 2. Read spec artifact (required): `mem_search("sdd/{change-name}/spec")` → `mem_get_observation`
 3. Read design artifact (required): `mem_search("sdd/{change-name}/design")` → `mem_get_observation`
@@ -32,6 +32,7 @@ Execute all steps from the skill directly in this context window:
 ## Engram Save (mandatory)
 
 After completing work, call `mem_save` with:
+
 - title: `"sdd/{change-name}/apply-progress"`
 - topic_key: `"sdd/{change-name}/apply-progress"`
 - type: `"architecture"`
@@ -39,6 +40,7 @@ After completing work, call `mem_save` with:
 ## Result Contract
 
 Return a structured result with these fields:
+
 - `status`: `done` | `blocked` | `partial`
 - `executive_summary`: one-sentence description of what was implemented (tasks done / total)
 - `artifacts`: list of files changed and topic_keys updated

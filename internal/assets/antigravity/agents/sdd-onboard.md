@@ -1,7 +1,6 @@
 ---
 name: sdd-onboard
-description: >
-  Guide new projects through initial SDD setup and workflow orientation.
+description: Guide new projects through initial SDD setup and workflow orientation.
 subagent: true
 mainAgent: false
 tools: ["view_file", "list_dir", "grep_search", "write_to_file", "replace_file_content", "run_command"]
@@ -16,6 +15,7 @@ Read the skill file at `~/.gemini/antigravity-cli/skills/sdd-init/SKILL.md` and 
 Also read shared conventions at `~/.gemini/antigravity-cli/skills/_shared/sdd-phase-common.md`.
 
 Execute all steps from the skill directly in this context window:
+
 1. Walk through project setup, scanning codebase structure and dependencies
 2. Verify testing capabilities and configure SDD defaults
 3. Provide guided orientation for SDD workflow phases
@@ -23,6 +23,7 @@ Execute all steps from the skill directly in this context window:
 ## Result Contract
 
 Return a structured result with these fields:
+
 - `status`: `done` | `blocked`
 - `executive_summary`: one-sentence summary of onboarding setup
 - `artifacts`: list of topic_keys or files initialized

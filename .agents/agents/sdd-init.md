@@ -1,8 +1,7 @@
 ---
 name: sdd-init
 role: "SDD Stack Initializer"
-description: >
-  Initialize SDD context, detect project stack, testing capabilities, and bootstrap persistence backend.
+description: Initialize SDD context, detect project stack, testing capabilities, and bootstrap persistence backend.
 model: deepseek/deepseek-v4-flash
 subagent: true
 mainAgent: false
@@ -19,6 +18,7 @@ Read the skill file at `~/.gemini/antigravity-cli/skills/sdd-init/SKILL.md` and 
 Also read shared conventions at `~/.gemini/antigravity-cli/skills/_shared/sdd-phase-common.md`.
 
 Execute all steps from the skill directly in this context window:
+
 1. Detect project stack and testing framework
 2. Probe testing capabilities and verify build/test execution
 3. Check for Strict TDD Mode prerequisites
@@ -28,6 +28,7 @@ Execute all steps from the skill directly in this context window:
 ## Engram Save (mandatory)
 
 After completing work, call `mem_save` with:
+
 - title: `"sdd-init/{project}"`
 - topic_key: `"sdd-init/{project}"`
 - type: `"architecture"`
@@ -36,6 +37,7 @@ After completing work, call `mem_save` with:
 ## Result Contract
 
 Return a structured result with these fields:
+
 - `status`: `done` | `blocked`
 - `executive_summary`: one-sentence summary of initialized capabilities
 - `artifacts`: list of topic_keys or files created

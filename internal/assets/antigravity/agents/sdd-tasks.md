@@ -1,7 +1,6 @@
 ---
 name: sdd-tasks
-description: >
-  Generate structured task DAGs and implementation work units.
+description: Generate structured task DAGs and implementation work units.
 subagent: true
 mainAgent: false
 tools: ["view_file", "list_dir", "grep_search", "write_to_file", "replace_file_content"]
@@ -16,6 +15,7 @@ Read the skill file at `~/.gemini/antigravity-cli/skills/sdd-tasks/SKILL.md` and
 Also read shared conventions at `~/.gemini/antigravity-cli/skills/_shared/sdd-phase-common.md`.
 
 Execute all steps from the skill directly in this context window:
+
 1. Read spec and design artifacts
 2. Decompose implementation into atomic, testable task DAG units with clear dependencies
 3. Write tasks artifact in active backend
@@ -23,6 +23,7 @@ Execute all steps from the skill directly in this context window:
 ## Engram Save (mandatory)
 
 After completing work, call `mem_save` with:
+
 - title: `"sdd/{change-name}/tasks"`
 - topic_key: `"sdd/{change-name}/tasks"`
 - type: `"architecture"`
@@ -30,6 +31,7 @@ After completing work, call `mem_save` with:
 ## Result Contract
 
 Return a structured result with these fields:
+
 - `status`: `done` | `blocked`
 - `executive_summary`: one-sentence summary of task DAG (task count and plan)
 - `artifacts`: list of tasks topic_keys or files

@@ -1,7 +1,6 @@
 ---
 name: review-resilience
-description: >
-  Adversarial review lens evaluating performance, resource leaks, and fault tolerance.
+description: Adversarial review lens evaluating performance, resource leaks, and fault tolerance.
 subagent: true
 mainAgent: false
 tools: ["view_file", "list_dir", "grep_search"]

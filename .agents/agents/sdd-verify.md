@@ -1,8 +1,7 @@
 ---
 name: sdd-verify
 role: "Implementation Verifier"
-description: >
-  Validate implementation against specs using tests and verification builds.
+description: Validate implementation against specs using tests and verification builds.
 model: deepseek/deepseek-v4-flash
 subagent: true
 mainAgent: false
@@ -19,6 +18,7 @@ Read the skill file at `~/.gemini/antigravity-cli/skills/sdd-verify/SKILL.md` an
 Also read shared conventions at `~/.gemini/antigravity-cli/skills/_shared/sdd-phase-common.md`.
 
 Execute all steps from the skill directly in this context window:
+
 1. Run test runner and build checks against exact candidate bytes
 2. Perform admission checks before any persistence write
 3. Verify implementation against spec requirements
@@ -27,6 +27,7 @@ Execute all steps from the skill directly in this context window:
 ## Engram Save (mandatory)
 
 After completing work, call `mem_save` with:
+
 - title: `"sdd/{change-name}/verify-report"`
 - topic_key: `"sdd/{change-name}/verify-report"`
 - type: `"architecture"`
@@ -34,6 +35,7 @@ After completing work, call `mem_save` with:
 ## Result Contract
 
 Return a structured result with these fields:
+
 - `status`: `done` | `blocked` | `failed`
 - `executive_summary`: one-sentence summary of verification results
 - `artifacts`: list of report topic_keys or files
