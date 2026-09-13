@@ -82,14 +82,68 @@ func TestCheckAntigravityDynamicSubagentRuntime_NotInstalled(t *testing.T) {
 	}
 }
 
+// The regression test for the incident that motivated the hooks-integrity
+// check: a hooks.json whose top level is a map of EVENT names instead of HOOK
+// names is rejected by agy whole, leaving every hook in it inert with no
+// visible symptom.
+func TestCheckAntigravityHooksIntegrity_FailsOnEventTopLevel(t *testing.T) {
+	home := t.TempDir()
+	configDir := filepath.Join(home, ".gemini", "antigravity-cli")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	malformed := `{"PreInvocation": [{"type": "command", "command": "x"}]}`
+	if err := os.WriteFile(filepath.Join(configDir, "hooks.json"), []byte(malformed), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got := checkAntigravityHooksIntegrity(home)
+
+	if got.Name != "antigravity:hooks-integrity" {
+		t.Fatalf("Name = %q, want %q", got.Name, "antigravity:hooks-integrity")
+	}
+	if got.Status != CheckStatusFail {
+		t.Errorf("Status = %q, want %q: a schema violation makes agy drop the whole file", got.Status, CheckStatusFail)
+	}
+	if got.Remedy == nil {
+		t.Error("Remedy must be non-nil so the operator is told how to fix it")
+	}
+}
+
+// A hooks-integrity check alongside a healthy surface must stay quiet.
+func TestCheckAntigravityHooksIntegrity_PassesOnEmptyConfigDir(t *testing.T) {
+	home := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(home, ".gemini", "antigravity-cli"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	got := checkAntigravityHooksIntegrity(home)
+
+	if got.Status != CheckStatusPass {
+		t.Errorf("Status = %q, want %q when there is nothing to reject", got.Status, CheckStatusPass)
+	}
+	if got.Remedy != nil {
+		t.Error("a passing check must not carry a remedy")
+	}
+}
+
 func TestCheckAntigravityDynamicSubagentRuntime_AntigravityNoPlugin(t *testing.T) {
 	home := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(home, ".gemini", "antigravity-cli"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	results := checkAntigravityDynamicSubagentRuntime(home)
-	if len(results) != 2 {
-		t.Fatalf("results = %d, want 2 (installable surface + hardening contract)", len(results))
+	if len(results) != 3 {
+		t.Fatalf("results = %d, want 3 (installable surface + hardening contract + hooks integrity)", len(results))
+	}
+	// The hooks-integrity check also runs with no plugin installed: with no
+	// hooks.json on disk there is nothing agy can reject, so it reports PASS
+	// rather than noise.
+	if results[2].Name != "antigravity:hooks-integrity" {
+		t.Errorf("results[2].Name = %q, want %q", results[2].Name, "antigravity:hooks-integrity")
+	}
+	if results[2].Status != CheckStatusPass {
+		t.Errorf("results[2].Status = %q, want %q on an empty config dir", results[2].Status, CheckStatusPass)
 	}
 	// Installable surface should PASS (the CLI variant dir exists).
 	if results[0].Name != "antigravity:installed" {
@@ -132,8 +186,11 @@ func TestCheckAntigravityDynamicSubagentRuntime_AntigravityWithPlugin(t *testing
 	}
 	writeDoctorHardeningHook(t, home)
 	results := checkAntigravityDynamicSubagentRuntime(home)
-	if len(results) != 2 {
-		t.Fatalf("results = %d, want 2", len(results))
+	if len(results) != 3 {
+		t.Fatalf("results = %d, want 3", len(results))
+	}
+	if results[2].Name != "antigravity:hooks-integrity" {
+		t.Errorf("results[2].Name = %q, want %q", results[2].Name, "antigravity:hooks-integrity")
 	}
 	if results[1].Status != CheckStatusPass {
 		t.Errorf("results[1].Status = %q, want %q (hardening contract in place)", results[1].Status, CheckStatusPass)

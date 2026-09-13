@@ -33,7 +33,7 @@ import (
 // related to Antigravity dynamic subagents. It returns an empty slice when
 // Antigravity is not installed, so non-Antigravity users see no noise.
 //
-// Two checks are produced:
+// Three checks are produced:
 //
 //  1. "antigravity:installed" — PASS/WARN depending on whether the variant
 //     directory is present. The check name mirrors the installable surface.
@@ -42,6 +42,9 @@ import (
 //     specific note that runtime availability of `define_subagent` /
 //     `invoke_subagent` is NOT shell-probable. Users are pointed to the
 //     in-runtime fail-closed contract as the source of truth.
+//  3. "antigravity:hooks-integrity" — PASS/WARN/FAIL depending on whether the
+//     hooks surfaces agy consumes are readable and runnable at all. See
+//     checkAntigravityHooksIntegrity.
 func antigravityActiveConfigDir(homeDir string) string {
 	return antigravity.NewAdapter().GlobalConfigDir(homeDir)
 }
@@ -51,7 +54,7 @@ func checkAntigravityDynamicSubagentRuntime(homeDir string) []CheckResult {
 		return nil
 	}
 
-	results := make([]CheckResult, 0, 2)
+	results := make([]CheckResult, 0, 3)
 
 	// 1. Installable-surface check: is the Antigravity CLI/Desktop surface
 	// detected? The doctor is intentionally permissive here — even a bare
@@ -93,6 +96,12 @@ func checkAntigravityDynamicSubagentRuntime(homeDir string) []CheckResult {
 		Detail: detail,
 		Remedy: checkRemedy,
 	})
+
+	// 3. Hooks-integrity check: can agy actually read the hooks.json files and
+	// run the hook scripts we install? A schema violation makes agy drop the
+	// whole file silently, and a hook script whose shebang interpreter does not
+	// exist cannot start. Both leave hooks inert with no visible symptom.
+	results = append(results, checkAntigravityHooksIntegrity(homeDir))
 
 	return results
 }
