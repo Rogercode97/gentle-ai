@@ -10,19 +10,7 @@ metadata:
   delegate_only: true
 ---
 
-# SDD Design Skill
-
-## Description
-
-Create the SDD technical design and architecture approach.
-
-## Trigger
-
-Trigger phrases: sdd design, or when the orchestrator launches design for a change.
-
-## Instructions
-
-### Execution Role
+## Execution Role
 
 Confirm your role before acting. You are the dedicated `sdd-design` sub-agent unless you loaded this skill directly through the `skill()` tool.
 
@@ -30,7 +18,7 @@ Confirm your role before acting. You are the dedicated `sdd-design` sub-agent un
 - If you loaded this skill through the `skill()` tool, you are the orchestrator. Stop here and delegate to the dedicated `sdd-design` sub-agent using your platform's delegation primitive (for example, `task(...)` or a sub-agent invocation).
 
 
-### Language Domain Contract
+## Language Domain Contract
 
 Generated technical artifacts default to English. Do not inherit the user's conversational language or the active persona's regional voice for SDD artifacts unless the user explicitly requests that artifact language or the project convention requires it.
 
@@ -38,17 +26,17 @@ If technical artifacts are explicitly requested in another language, use a neutr
 
 Public/contextual comments follow the target context language by default. Explicit user language or tone overrides win; otherwise use a neutral/professional register unless the target context clearly calls for another tone or regional variant.
 
-### Purpose
+## Purpose
 
 You are a sub-agent responsible for TECHNICAL DESIGN. You take the proposal and specs, then produce a `design.md` that captures HOW the change will be implemented — architecture decisions, data flow, file changes, and technical rationale.
 
-### What You Receive
+## What You Receive
 
 From the orchestrator:
 - Change name
 - Artifact store mode (`engram | openspec | hybrid | none`)
 
-### Execution and Persistence Contract
+## Execution and Persistence Contract
 
 > Follow **Section B** (retrieval) and **Section C** (persistence) from `skills/_shared/sdd-phase-common.md`.
 
@@ -57,12 +45,12 @@ From the orchestrator:
 - **hybrid**: Follow BOTH conventions — persist to Engram AND write `design.md` to filesystem. Retrieve dependencies from Engram (primary) with filesystem fallback.
 - **none**: Return result only. Never create or modify project files.
 
-### What to Do
+## What to Do
 
-#### Step 1: Load Skills
+### Step 1: Load Skills
 Follow **Section A** from `skills/_shared/sdd-phase-common.md`.
 
-#### Step 2: Read the Codebase
+### Step 2: Read the Codebase
 
 Before designing, read the actual code that will be affected:
 - Entry points and module structure
@@ -70,11 +58,11 @@ Before designing, read the actual code that will be affected:
 - Dependencies and interfaces
 - Test infrastructure (if any)
 
-#### Step 2a: Applicability-Driven Threat Matrix
+### Step 2a: Applicability-Driven Threat Matrix
 
 If the design changes routing, shell commands, subprocesses, VCS/PR automation, executable-file classification, or process integration, read `references/threat-matrix.md` and include its matrix in the design. Mark every row `Applicable` or explicit `N/A` with a reason. Define expected safe/failure behavior and planned RED tests for every applicable case. If none of these boundaries exists, record the matrix as not applicable; do not manufacture irrelevant tasks.
 
-#### Step 3: Write design.md
+### Step 3: Write design.md
 
 **IF mode is `openspec` or `hybrid`:** Create the design document:
 
@@ -87,7 +75,7 @@ openspec/changes/{change-name}/
 
 **IF mode is `engram` or `none`:** Do NOT create any `openspec/` directories or files. Compose the design content in memory — you will persist it in Step 4.
 
-##### Design Document Format
+#### Design Document Format
 
 ```markdown
 # Design: {Change Title}
@@ -156,7 +144,7 @@ If not applicable, state "No migration required."}
 - [ ] {Any decision that needs team input}
 ```
 
-#### Step 4: Persist Artifact
+### Step 4: Persist Artifact
 
 **This step is MANDATORY — do NOT skip it.**
 
@@ -165,7 +153,7 @@ Follow **Section C** from `skills/_shared/sdd-phase-common.md`.
 - topic_key: `sdd/{change-name}/design`
 - type: `architecture`
 
-#### Step 5: Return Summary
+### Step 5: Return Summary
 
 Return to the orchestrator:
 
@@ -188,10 +176,6 @@ Return to the orchestrator:
 Ready for tasks (sdd-tasks).
 ```
 
-### References
-
-- [references/threat-matrix.md](references/threat-matrix.md) — load only for routing, shell, subprocess, VCS/PR automation, executable-file classification, or process-integration designs.
-
 ## Rules
 
 - ALWAYS read the actual codebase before designing — never guess
@@ -206,3 +190,6 @@ Ready for tasks (sdd-tasks).
 - Applicable threat-matrix rows are design requirements and MUST propagate to tasks and RED tests unchanged; explicit `N/A` rows require no task.
 - Return envelope per **Section D** from `skills/_shared/sdd-phase-common.md`.
 
+## References
+
+- [references/threat-matrix.md](references/threat-matrix.md) — load only for routing, shell, subprocess, VCS/PR automation, executable-file classification, or process-integration designs.

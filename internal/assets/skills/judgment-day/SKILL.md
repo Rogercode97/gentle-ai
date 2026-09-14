@@ -9,7 +9,7 @@ metadata:
 
 ## Activation Contract
 
-Trigger automatically for hot paths (diffs touching auth/update/security/payments paths) or when the diff exceeds 400 changed lines, or when the user explicitly requests Judgment Day. Judgment Day is a standalone developer tool: judges run whenever asked, on any runtime, and need no review transaction, runtime identity, or delivery-receipt machinery to start. It replaces ordinary 4R as the adversarial method for that target; never run both.
+Load only when the user explicitly requests Judgment Day or equivalent dual/adversarial review for a concrete target. Judgment Day is a standalone developer tool: judges run whenever asked, on any runtime, and need no review transaction, runtime identity, or delivery-receipt machinery to start. It replaces ordinary 4R as the adversarial method for that target; never run both.
 
 ## Hard Rules
 

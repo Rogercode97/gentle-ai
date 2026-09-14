@@ -38,13 +38,6 @@ For each artifact your phase requires, read its locator:
 
 A required locator reported as `<unresolved>` means the artifact does not exist. Report it as a blocker. Never substitute another store's copy, and never go looking for one.
 
-## B1. CodeGraph and Engram Context Search Protocol (MANDATORY)
-
-For any codebase investigation, searching, locating files, or retrieving relevant context (only for sub-agents whose tool scope permits search/CodeGraph access, such as `sdd-explore`):
-1. **Prior Memory Search**: Search Engram (`mem_search` followed by `mem_get_observation` on matched IDs) for the current task domain, topic, or relevant past decisions/bugs.
-2. **CodeGraph First**: You **MUST** query CodeGraph. First, attempt to use the `codegraph_explore` MCP tool. If the MCP tool is unavailable or fails, and you have command execution capabilities (meaning write/terminal tools are enabled), you may query the `codegraph explore` CLI command. **CRITICAL fallback gate**: If the MCP tool fails/is unavailable AND command execution is disabled (e.g. read-only roles like `sdd-explore` with `enable_write_tools: false`) or if command execution fails/hangs, do NOT retry or attempt command line queries. Immediately proceed to the filesystem fallback.
-3. **FS Fallback**: Only use standard filesystem search tools (like `grep_search` or list directory) as a fallback if CodeGraph is unavailable or fails to return sufficient context, and state this fallback in your report. Do not wait or block.
-
 ## C. Artifact Persistence
 
 Every artifact-producing phase other than the output-only `sdd-research` collector MUST persist it. Skipping this BREAKS the pipeline — downstream phases will not find your output.
@@ -68,10 +61,6 @@ mem_save(
 
 `topic_key` enables upserts — saving again updates, not duplicates.
 `capture_prompt: false` is mandatory for SDD artifacts because they are automated pipeline outputs, not human/proactive memory saves. Set it when the Engram tool schema supports it; if an older schema rejects or does not expose the field, omit it rather than failing.
-
-### Dual-Path Persistence Guarantee
-
-Subagents MUST attempt direct persistence via `mem_save` when MCP tools are available (`enable_mcp_tools: true`). The orchestrator provides an active fallback persistence guarantee: if a subagent completes without persisting directly to Engram, the orchestrator inspects the return envelope and saves the artifact under `sdd/{change-name}/{artifact-type}` before advancing the pipeline.
 
 ### OpenSpec mode
 

@@ -10,28 +10,16 @@ metadata:
   delegate_only: false
 ---
 
-# SDD Onboard Skill
-
-## Description
-
-Walk users through the SDD workflow on the real codebase.
-
-## Trigger
-
-Trigger phrases: sdd onboard, or when the orchestrator launches onboarding for the full SDD cycle.
-
-## Instructions
-
 > **ORCHESTRATOR NOTE**: This skill is designed to be executed INLINE by the
 > orchestrator. It is an interactive walkthrough — no sub-agent delegation
 > needed.
 
-### Executor Override
+## Executor Override
 
 If you ARE the `sdd-onboard` sub-agent (NOT the orchestrator), the gate above does NOT apply to you. Continue with the phase work below. Do NOT delegate. Do NOT call the Skill tool. You are the executor — execute.
 
 
-### Language Domain Contract
+## Language Domain Contract
 
 Generated technical artifacts default to English. Do not inherit the user's conversational language or the active persona's regional voice for SDD artifacts unless the user explicitly requests that artifact language or the project convention requires it.
 
@@ -39,19 +27,19 @@ If technical artifacts are explicitly requested in another language, use a neutr
 
 Public/contextual comments follow the target context language by default. Explicit user language or tone overrides win; otherwise use a neutral/professional register unless the target context clearly calls for another tone or regional variant.
 
-### Purpose
+## Purpose
 
 You are a sub-agent responsible for ONBOARDING. You guide the user through a complete SDD cycle — from exploration to archive — using their actual codebase. This is a real change with real artifacts, not a toy example. The goal is to teach by doing.
 
-### What You Receive
+## What You Receive
 
 From the orchestrator:
 - Artifact store mode (`engram | openspec | hybrid | none`)
 - Optional: a suggested improvement or area to focus on
 
-### What to Do
+## What to Do
 
-#### Phase 1: Welcome and Codebase Analysis
+### Phase 1: Welcome and Codebase Analysis
 
 Greet the user and explain what's about to happen:
 
@@ -81,7 +69,7 @@ Criteria for a good onboarding change:
 
 Present 2-3 options to the user. Let them choose or suggest their own.
 
-#### Phase 2: Explore (narrated)
+### Phase 2: Explore (narrated)
 
 Narrate as you explore:
 
@@ -97,7 +85,7 @@ Conclude with:
 "Good — I understand what we're working with. Now let's start a real change."
 ```
 
-#### Phase 3: Propose (narrated)
+### Phase 3: Propose (narrated)
 
 ```
 "Step 2: Propose — We write down WHAT we're building and WHY.
@@ -113,7 +101,7 @@ Create the change folder and write `proposal.md` following `sdd-propose` format.
 
 Show the user the proposal and let them review it. Ask if they want to adjust anything before continuing.
 
-#### Phase 4: Specs (narrated)
+### Phase 4: Specs (narrated)
 
 ```
 "Step 3: Specs — We define WHAT the system should do, in testable terms.
@@ -127,7 +115,7 @@ Write the delta specs following `sdd-spec` format. After creating them:
  These scenarios will drive the verify phase later."
 ```
 
-#### Phase 5: Design (narrated)
+### Phase 5: Design (narrated)
 
 ```
 "Step 4: Design — We decide HOW to build it. Architecture decisions, file changes, rationale."
@@ -140,7 +128,7 @@ Write `design.md` following `sdd-design` format. Highlight the key decisions:
  over alternatives. Future you (and teammates) will thank you."
 ```
 
-#### Phase 6: Tasks (narrated)
+### Phase 6: Tasks (narrated)
 
 ```
 "Step 5: Tasks — We break the work into concrete, checkable steps."
@@ -153,7 +141,7 @@ Write `tasks.md` following `sdd-tasks` format. Explain the structure:
  'Implement feature' is not a task. 'Create src/utils/validate.ts with validateEmail()' is."
 ```
 
-#### Phase 7: Apply (narrated)
+### Phase 7: Apply (narrated)
 
 ```
 "Step 6: Apply — Now we write actual code. The tasks guide us, the specs tell us what 'done' means."
@@ -173,7 +161,7 @@ If Strict TDD mode is active, apply the TDD cycle and explain it:
  We write the failing test FIRST, then write the minimum code to pass it."
 ```
 
-#### Phase 8: Verify (narrated)
+### Phase 8: Verify (narrated)
 
 ```
 "Step 7: Verify — We check that what we built matches what we specified."
@@ -186,7 +174,7 @@ Run `sdd-verify` behavior. Explain the compliance matrix:
  This is the moment where specs pay off — they tell us exactly what to check."
 ```
 
-#### Phase 9: Archive (narrated)
+### Phase 9: Archive (narrated)
 
 ```
 "Step 8: Archive — We merge our delta specs into the main specs and close the change.
@@ -200,7 +188,7 @@ Run `sdd-archive` behavior. Show the result:
  And openspec/specs/ now reflects the new behavior."
 ```
 
-#### Phase 10: Summary
+### Phase 10: Summary
 
 Close the session with a recap:
 
@@ -241,4 +229,3 @@ Small tweaks? Just code. Features, APIs, architecture decisions? SDD first.
 - Adapt the tone to the user — if they're experienced, skip basics; if they're new, explain more.
 - Follow all format rules from the individual skills (sdd-propose, sdd-spec, sdd-design, sdd-tasks, sdd-apply, sdd-verify, sdd-archive).
 - Return envelope per **Section D** from `skills/_shared/sdd-phase-common.md`.
-

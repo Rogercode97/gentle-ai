@@ -73,7 +73,7 @@ These rules select execution topology, not the implementation method. Crossing a
 Core principle: **does this inflate the parent context without need?** If yes, use one bounded worker. If no, do it inline.
 
 | Action | Direct inline | Delegated direct worker |
-| -------- | --------------- | ------------------------- |
+|--------|---------------|-------------------------|
 | Read to decide/verify (1–3 files) | ✅ | — |
 | Read to explore/understand (4+ files) | — | ✅ one narrow mapper |
 | Read as preparation for writing | — | ✅ together with the write |
@@ -96,7 +96,6 @@ These are parent-orchestrator routing boundaries. Use the smallest useful topolo
 4. **Context rule**: delegate reading that prepares a write and broad research/context compression.
 5. **Per-action rule**: tests, builds, installs, and native checking actors may use fresh workers without changing the implementation route or creating SDD state.
 6. **Optional SDD rule**: propose SDD only when durable proposal/spec/design/tasks materially reduce substantial ambiguity. Select SDD only after an explicit request or accepted proposal; risk alone never forces SDD.
-7. **Large-Context Window Rule (Gemini/Antigravity)**: Large context window capacity (e.g. 1M+ tokens) NEVER overrides delegation rules. Even if the active model can hold many files in memory, processing 4+ read files or 2+ write files in the parent thread is strictly forbidden and MUST be delegated to subagents.
 
 #### Delegated Verification Gate (MANDATORY)
 
@@ -349,7 +348,7 @@ When delegating to sub-agents, pass `## Skills to load before work` followed by 
 Read this table at session start (or before first SDD/Judgment-Day delegation), cache it for the session, and use the mapped alias only for SDD/Judgment-Day phase agents. If an SDD/Judgment-Day phase is missing, use the `default` fallback row. If you lack access to the assigned model, substitute `sonnet` and continue.
 
 | Phase | Default Model | Reason |
-| ------- | --------------- | -------- |
+|-------|---------------|--------|
 | sdd-explore | sonnet | Reads code, structural - not architectural |
 | sdd-propose | opus | Architectural decisions |
 | sdd-spec | sonnet | Structured writing |
@@ -419,7 +418,7 @@ Sub-agents get a fresh context with NO memory. The orchestrator controls context
 Each phase has explicit read/write rules:
 
 | Phase | Reads | Writes |
-| ------- | ------- | -------- |
+|-------|-------|--------|
 | `sdd-explore` | nothing | `explore` |
 | `sdd-propose` | exploration (optional) | `proposal` |
 | `sdd-spec` | proposal (required) | `spec` |
@@ -460,7 +459,7 @@ This prevents progress loss across batches. The sub-agent is responsible for rea
 #### Engram Topic Key Format
 
 | Artifact | Topic Key |
-| ---------- | ----------- |
+|----------|-----------|
 | Project context | `sdd-init/{project}` |
 | Exploration | `sdd/{change-name}/explore` |
 | Proposal | `sdd/{change-name}/proposal` |
