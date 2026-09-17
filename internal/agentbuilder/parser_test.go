@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gentleman-programming/gentle-ai/v2/internal/assets"
+	"github.com/gentleman-programming/gentle-ai/v3/internal/assets"
 )
 
 // validSKILL is a complete, parseable SKILL.md fixture.

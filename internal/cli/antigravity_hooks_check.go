@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/gentleman-programming/gentle-ai/v2/internal/antigravityhooks"
-	"github.com/gentleman-programming/gentle-ai/v2/internal/doctor"
+	"github.com/gentleman-programming/gentle-ai/v3/internal/antigravityhooks"
+	"github.com/gentleman-programming/gentle-ai/v3/internal/doctor"
 )
 
 // antigravityExpectedHookNames are the named hooks gentle-ai installs for the
