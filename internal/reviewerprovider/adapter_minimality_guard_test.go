@@ -22,7 +22,6 @@ var reviewerAdapterImplementations = map[string]string{
 	"antigravity_adapter.go": "AntigravityAdapter",
 	"claude_adapter.go":      "ClaudeAdapter",
 	"codex_adapter.go":       "CodexAdapter",
-	"pi_adapter.go":          "PiAdapter",
 }
 
 // TestAdapterMinimalityGuard protects the Go-owned review boundary. An adapter

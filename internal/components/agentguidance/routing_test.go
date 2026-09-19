@@ -282,20 +282,22 @@ func TestRenderRoutingClosesEachTaskWithAWorkUnitCommitAndReviewsIt(t *testing.T
 		}},
 		{"assess each commit against the last reviewed boundary", []string{
 			"Run applicable functional checks per task, not a review cycle per TODO checkbox",
-			"run `gentle-ai review assess --cwd <repo> --base-ref <last reviewed boundary> --committed-only --json` on that commit",
-			"Passive or low: silent structural checks, and the boundary advances",
+			"run `gentle-ai review assess --cwd <repo> --agent <runtime> --base-ref <last reviewed boundary> --committed-only --json` on that commit and read `review_due` and `review_due_reason`",
 		}},
-		{"high or unavailable assessment reviews the commit immediately", []string{
-			"High, or an unavailable or failed assessment: the commit itself is the candidate",
-			"run the native preflight STATUS with `--base-ref <last reviewed boundary> --committed-only` right away",
+		{"a due assessment hands over the exact preflight transition", []string{
+			"When `review_due` is true (`high_risk`, or `slice_budget_reached` for a medium range that reached the delivery budget of about 400 authored changed lines), execute the returned `next_transition.command` verbatim",
+			"it is the exact preflight STATUS for the same `--base-ref`/`--committed-only` selectors",
+			"the reviewed boundary advances to this commit once that review is acknowledged",
 		}},
-		{"medium defers to the PR slice bounded by the delivery budget", []string{
-			"Medium: defer; the candidate is the PR slice, the commits accumulated since the last reviewed boundary, bounded by the delivery budget of about 400 authored changed lines",
-			"at slice close, when the budget is reached or the feature ends, run the preflight STATUS with `--base-ref <last reviewed boundary> --committed-only`",
+		{"a non-due assessment records its reason and continues", []string{
+			"When `review_due` is false, record `review_due_reason` and continue: `passive` needs no review and the boundary advances",
+			"`under_budget` stays pending in the slice until a later commit reaches the budget",
+			"`already_reviewed` means this exact range is already covered by terminal authority",
 		}},
 		{"boundaries advance and outcomes are recorded per task", []string{
 			"The first boundary is the branch point, and every reviewed boundary becomes the next base",
-			"Record per task the assessed tier and outcome: granted, declined, passive, deferred to slice, or unavailable",
+			"Record per task the assessed tier and outcome: granted, declined, passive, under budget, already reviewed, or unavailable",
+			"An unavailable or failed assessment never lowers the tier: treat the commit as due and run the preflight STATUS with `--base-ref <last reviewed boundary> --committed-only`",
 			"Never infer low risk from a failed assessment",
 		}},
 		{"delivery strategy vocabulary and skill resolution", []string{
@@ -583,6 +585,51 @@ func TestRenderRoutingOpensWithTheODDProtocol(t *testing.T) {
 			detailHeading := strings.Index(rendered, "### Organic Driven Development")
 			if protocolHeading < 0 || detailHeading < 0 || protocolHeading >= detailHeading {
 				t.Fatalf("RenderRouting(%q) must render the ODD protocol heading before the detail section:\n%s", agent.ID, rendered)
+			}
+		})
+	}
+}
+
+// TestRenderRoutingMakesDelegationMandatory pins the ODD delegation contract
+// as behavioral, not advisory: the rendered block must carry a mandatory
+// trigger table (mapping, writer, preparation, long-session backstop), a
+// per-task route declaration recorded in the feature document, and the
+// explicit statement that executing past a fired trigger inline is a routing
+// defect. Without this, the permissive "smallest useful topology" framing
+// wins and the orchestrator executes everything inline.
+func TestRenderRoutingMakesDelegationMandatory(t *testing.T) {
+	t.Parallel()
+
+	routing := capabilitymanifest.CanonicalImplementationRouting()
+
+	for _, agent := range catalog.AllAgents() {
+		t.Run(string(agent.ID), func(t *testing.T) {
+			t.Parallel()
+
+			rendered, err := RenderRouting(agent.ID)
+			if err != nil {
+				t.Fatalf("RenderRouting(%q) error = %v", agent.ID, err)
+			}
+
+			for _, want := range []string{
+				"### Mandatory Delegation Triggers",
+				"These triggers are mandatory, not advisory",
+				"stop and delegate through the runtime's subagent mechanism",
+				"executing past a fired trigger inline is a routing defect",
+				fmt.Sprintf("**Mapping trigger:** when understanding the work requires %d or more files", routing.DelegatedDirect.MappingMinUnderstandingFiles),
+				fmt.Sprintf("**Writer trigger:** when implementation touches %d or more non-trivial files", routing.DelegatedDirect.WriterMinNonTrivialFiles),
+				"**Preparation trigger:**",
+				"**Long-session backstop:**",
+				"pause and delegate the next bounded unit of work",
+				"**Route declaration:**",
+				"record the chosen route per task",
+				"so skipped delegation is observable instead of silent",
+				"These triggers never select SDD and never create SDD artifacts",
+				"honoring its mandatory delegation triggers",
+			} {
+				if !strings.Contains(rendered, want) {
+					t.Fatalf("RenderRouting(%q) is missing mandatory delegation clause %q:\n%s", agent.ID, want, rendered)
+				}
 			}
 		})
 	}

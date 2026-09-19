@@ -34,6 +34,19 @@ CREATE TABLE IF NOT EXISTS rollups_daily (
 	value INTEGER NOT NULL,
 	PRIMARY KEY (day, metric, key)
 );
+
+-- runtime_delivery_ids backs --runtime-store=metrics: identity-only dedup
+-- for POST /v1/runtime-events with no payload stored (the row data is only
+-- ever aggregated into the in-memory RuntimeMetrics registry, see
+-- metrics.go). Deliberately no foreign key or shared identity with
+-- runtime_deliveries: sqlite/both modes dedup by payload comparison there,
+-- metrics mode dedups by id only here, and a collector is never run in more
+-- than one mode at a time.
+CREATE TABLE IF NOT EXISTS runtime_delivery_ids (
+	delivery_id TEXT PRIMARY KEY,
+	received_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_runtime_delivery_ids_received_at ON runtime_delivery_ids(received_at);
 `
 
 const dayLayout = "2006-01-02"
@@ -304,10 +317,13 @@ type rollupRow struct {
 }
 
 // PurgeOlderThan atomically deletes legacy events and whole runtime deliveries
-// received strictly before cutoff. Its count remains legacy events only, not
-// runtime rows, deliveries, observations, or people. Rollups are never purged.
-// Runtime delivery identities expire with their rows; retries do not renew age.
-func (s *Storage) PurgeOlderThan(ctx context.Context, cutoff time.Time) (int64, error) {
+// received strictly before cutoff, then trims runtime delivery identities
+// received before dedupCutoff in batches (see purgeRuntimeDeliveryIDsOlderThan).
+// Its count remains legacy events only, not runtime rows, deliveries,
+// identities, observations, or people. Rollups are never purged. Retries do not
+// renew age. dedupCutoff is normally later than cutoff: an identity only has to
+// outlive the moments in which a replay of its delivery can arrive.
+func (s *Storage) PurgeOlderThan(ctx context.Context, cutoff, dedupCutoff time.Time) (int64, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, err
@@ -326,6 +342,11 @@ func (s *Storage) PurgeOlderThan(ctx context.Context, cutoff time.Time) (int64, 
 	}
 	if err := tx.Commit(); err != nil {
 		return 0, errRuntimeStorage
+	}
+	// The raw purge is committed by now: a failure here is the identity
+	// trim's own, named with its cutoff, and the committed count still returns.
+	if _, err := purgeRuntimeDeliveryIDsOlderThan(ctx, s.db, dedupCutoff); err != nil {
+		return count, fmt.Errorf("purge runtime delivery ids before %s: %w", dedupCutoff.UTC().Format(dayLayout), err)
 	}
 	return count, nil
 }
