@@ -32,10 +32,14 @@ The current workaround is to rewrite the first line of an installed package entr
 
 ## Tasks
 
-- [ ] T1 Add the Termux shebang-aware command constructor with focused unit tests.
-- [ ] T2 Route the pipeline runner, dependency probe, and npm-prefix probe through it.
-- [ ] T3 Verify with `go build ./...`, the `internal/system` and `internal/cli` suites, and an on-device install run.
+- [x] T1 Add the Termux shebang-aware command constructor with focused unit tests.
+- [x] T2 Route the pipeline runner, dependency probe, and npm-prefix probe through it.
+- [x] T3 Verify with `go build ./...`, the `internal/system` and `internal/cli` suites, and an on-device install run.
 
 ## Evidence
 
-_(commit identity and observed command output recorded here as tasks close)_
+- Commit `f39c6844` on `termux-min`, on top of the rebased layer `f797c139` (`upstream/main` `6c7f162f` + 7 Termux patches, 0 behind / 8 ahead).
+- `go build ./...` green; `gofmt -l` and `go vet ./internal/system/ ./internal/cli/` clean.
+- `go test -count=1 ./internal/system/` green, including the new shebang table tests.
+- `internal/cli` cannot complete on this device: the package hits the 10m Go test timeout inside review-authority lifecycle tests (`runLegacyFacadeStartForTest` → `canonicalLocatorDirectory` → `EvalSymlinks`). The filtered subset covering the changed path reports only two failures, both reproduced identically on the pre-change baseline `f797c139`: `TestRunInstallEngramForPiTargetsConfiguredAgentDirectory` and `TestRunInstallGGALinuxIncludesTempCleanupBeforeClone`. The first asserts the real `~/.pi` does not exist, which is false on this machine; the second is a Linux-specific gga temp-cleanup case. Neither is a regression.
+- On-device proof, with `pi`'s shebang restored to the broken upstream `#!/usr/bin/env node` and no local patch: `gentle-ai install --agents pi` → `exit=0`, `You're ready. Start building.`, all five packages installed and registered (`gentle-pi`, `gentle-engram`, `pi-mcp-adapter`, `pi-web-access`, `pi-btw`). Before the fix the same command failed with `fork/exec /data/data/com.termux/files/usr/bin/pi: no such file or directory`.
