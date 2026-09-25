@@ -86,12 +86,14 @@ Android support (the `gentle-update` alias in `~/.bashrc` still does exactly tha
 
 ## Pending
 
-1. Commit the 3 lean deletions in `~/skills-sovereign` (branch `chore/catalog-work-unit-closure`):
-   `scripts/inject-lean-gemini.sh`, `scripts/tests/test-inject-lean-gemini.sh`,
-   `skills/_shared/templates/GEMINI.lean.md`. Tracked in git, currently deleted but uncommitted.
-2. Remove or repoint the `gentle-update` alias in `~/.bashrc`.
-3. Run `/reload` so the edited skill is active in the session.
-4. Optional: note in `docs/platforms.md` that Android support comes from the fork, not upstream.
-5. Optional: `git push -u rogercode termux-min` (still local only).
-6. Known vestige: `review-prompt-parity/scripts/verify_prompt_parity.py` keeps a `--lean`
+1. ~~Remove or repoint the `gentle-update` alias in `~/.bashrc`.~~ Done: the alias and its
+   `gentle-ai-update` mirror are gone, replaced by a comment explaining why they are an
+   antipattern. `g-sync` / `gentle-sync` are the only update entry points. Backup at
+   `~/.bashrc.bak-20260925-leanalias`.
+2. Run `/reload` so the edited skill is active in the session.
+3. Optional: note in `docs/platforms.md` that Android support comes from the fork, not upstream.
+4. Optional: `git push -u rogercode termux-min` (still local only).
+5. Known vestige: `review-prompt-parity/scripts/verify_prompt_parity.py` keeps a `--lean`
    default pointing at the deleted template; it only fails if invoked without `--lean`.
+6. The 3 lean deletions were committed in `~/skills-sovereign` as `d5e40b0`. That repo still
+   carries an unrelated uncommitted change in `.agents/handoff.md` from another work session.
