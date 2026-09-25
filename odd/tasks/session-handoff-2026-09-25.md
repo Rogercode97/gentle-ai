@@ -75,25 +75,37 @@ missing Pi MCP adapter tolerance, and POSIX shebang resolution. `upstream/main` 
 ## Routine
 
 ```bash
-g-sync                                     # update (rebase layer + build + sync)
-gentle-ai doctor                           # gate: healthy
-git rev-list --count HEAD..upstream/main   # 0 = up to date
+g-verify                                     # sync -> doctor -> behind=0, con ledger JSON
+g-verify --no-sync                           # solo verifica, sin mutar nada
+gentle-ai doctor                             # healthy
+git rev-list --count HEAD..upstream/main     # 0 = up to date
 ```
+
+`g-verify` sale con `0` solo si el sync pasó, `doctor` responde `healthy` y `behind=0`; deja
+los logs en `~/.cache/gentle-verify/`. Binarios: `~/.local/bin/{gentle-ai,sync-gentle-main,gentle-verify}`;
+aliases `g-sync`, `gentle-sync`, `g-verify` en `~/.bashrc`.
 
 Never trust release numbers. Never run `go install …gentle-ai/cmd/gentle-ai@latest` against
 `~/.local/bin/gentle-ai`: it overwrites the Termux build with an upstream one that has no
-Android support (the `gentle-update` alias in `~/.bashrc` still does exactly that).
+Android support. The `gentle-update` alias that did exactly that was removed.
+
+## Custom persona is user-owned
+
+With `persona: "custom"` in `~/.gentle-ai/state.json`, nothing in gentle-ai writes
+`~/.pi/gentle-ai/persona.json`: the install step is excluded in `internal/model/presets.go:38`
+and both `InjectPiPersona` (`internal/components/persona/inject.go:31`) and `injectInternal`
+short-circuit on `PersonaCustom`. The file is safe to edit permanently. Its contract is narrow
+(`{"mode": "…"}`), the mode is resolved by the gentle-pi runtime, and customising gentle-pi's
+own assets is NOT durable because `pi update --extensions` overwrites them.
 
 ## Pending
 
-1. ~~Remove or repoint the `gentle-update` alias in `~/.bashrc`.~~ Done: the alias and its
-   `gentle-ai-update` mirror are gone, replaced by a comment explaining why they are an
-   antipattern. `g-sync` / `gentle-sync` are the only update entry points. Backup at
-   `~/.bashrc.bak-20260925-leanalias`.
+1. The lean deletions were committed in `~/skills-sovereign` as `d5e40b0`. That repo still
+   carries an unrelated uncommitted change in `.agents/handoff.md` from another work session.
 2. Run `/reload` so the edited skill is active in the session.
 3. Optional: note in `docs/platforms.md` that Android support comes from the fork, not upstream.
 4. Optional: `git push -u rogercode termux-min` (still local only).
-5. Known vestige: `review-prompt-parity/scripts/verify_prompt_parity.py` keeps a `--lean`
+5. Optional: remove the `gentle-update` reference that remains as an explanatory comment in
+   `~/.bashrc`; the alias itself is already gone.
+6. Known vestige: `review-prompt-parity/scripts/verify_prompt_parity.py` keeps a `--lean`
    default pointing at the deleted template; it only fails if invoked without `--lean`.
-6. The 3 lean deletions were committed in `~/skills-sovereign` as `d5e40b0`. That repo still
-   carries an unrelated uncommitted change in `.agents/handoff.md` from another work session.
