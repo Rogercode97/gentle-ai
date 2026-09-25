@@ -142,7 +142,7 @@ func detectSingleDep(ctx context.Context, dep Dependency) Dependency {
 	dep.Installed = true
 
 	// Run version command to extract version string.
-	cmd := exec.CommandContext(ctx, dep.DetectCmd[0], dep.DetectCmd[1:]...)
+	cmd := CommandContext(ctx, dep.DetectCmd[0], dep.DetectCmd[1:]...)
 	EnsureCommandDir(cmd)
 	out, err := cmd.Output()
 	if err != nil {
