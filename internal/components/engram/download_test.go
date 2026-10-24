@@ -464,6 +464,82 @@ func TestDownloadLatestBinarySkipsLatestReleaseWithoutBinaryAssets(t *testing.T)
 	}
 }
 
+// TestDownloadLatestBinaryAndroidUsesLinuxAsset asserts that a Termux platform
+// profile, which reports OS "android", downloads the published linux asset.
+// Upstream ships no android builds, so the unmapped "android" token turns every
+// Termux upgrade into a 404 before extraction.
+func TestDownloadLatestBinaryAndroidUsesLinuxAsset(t *testing.T) {
+	const binaryVersion = "3.5.4"
+
+	tarContent := buildFakeTarGz(t, "engram")
+	goarch := normalizeArch(runtime.GOARCH)
+	archiveName := engramArchiveName(binaryVersion, "linux", goarch)
+	checksums := makeChecksumsTxt(archiveName, tarContent)
+
+	var downloadedPath string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.Contains(r.URL.Path, "releases/latest"):
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]string{"tag_name": "v" + binaryVersion})
+		case strings.Contains(r.URL.Path, "releases") &&
+			!strings.Contains(r.URL.Path, "releases/latest") &&
+			!strings.Contains(r.URL.Path, "/releases/download") &&
+			r.URL.Query().Get("per_page") == "20":
+			w.Header().Set("Content-Type", "application/json")
+			if r.URL.Query().Get("page") != "1" {
+				json.NewEncoder(w).Encode([]map[string]any{})
+				return
+			}
+			json.NewEncoder(w).Encode([]map[string]any{{
+				"tag_name":   "v" + binaryVersion,
+				"draft":      false,
+				"prerelease": false,
+				"assets": []map[string]string{
+					{"name": "checksums.txt"},
+					{"name": archiveName},
+				},
+			}})
+		case strings.HasSuffix(r.URL.Path, "checksums.txt"):
+			w.Header().Set("Content-Type", "text/plain")
+			fmt.Fprint(w, checksums)
+		case strings.Contains(r.URL.Path, "/releases/download/v"+binaryVersion+"/"+archiveName):
+			downloadedPath = r.URL.Path
+			w.Header().Set("Content-Type", "application/octet-stream")
+			w.Write(tarContent)
+		default:
+			t.Errorf("unexpected request: %s", r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	origClient := engramHTTPClient
+	origBaseURL := engramGitHubBaseURL
+	engramHTTPClient = server.Client()
+	engramGitHubBaseURL = server.URL
+	t.Cleanup(func() {
+		engramHTTPClient = origClient
+		engramGitHubBaseURL = origBaseURL
+	})
+
+	tmpDir := t.TempDir()
+	origInstallDirFn := engramInstallDirFn
+	engramInstallDirFn = func(goos string) string { return tmpDir }
+	t.Cleanup(func() { engramInstallDirFn = origInstallDirFn })
+
+	installedPath, err := DownloadLatestBinary(system.PlatformProfile{OS: "android", PackageManager: "pkg"}, false)
+	if err != nil {
+		t.Fatalf("DownloadLatestBinary(android) error = %v, want the published linux asset", err)
+	}
+	if got, want := filepath.Base(installedPath), "engram"; got != want {
+		t.Errorf("installed binary = %q, want %q", got, want)
+	}
+	if !strings.Contains(downloadedPath, "_linux_"+goarch+".tar.gz") {
+		t.Errorf("downloaded asset = %q, want the linux/%s archive", downloadedPath, goarch)
+	}
+}
+
 func TestDownloadLatestBinaryReleaseListFallsBackToAnonymousWhenTokenGets403(t *testing.T) {
 	const fakeToken = "ci-token"
 	const binaryVersion = "1.15.13"

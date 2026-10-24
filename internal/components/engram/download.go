@@ -160,11 +160,13 @@ func DownloadLatestBinary(profile system.PlatformProfile, isBeta bool) (string, 
 		return "", fmt.Errorf("fetch latest engram version: %w", err)
 	}
 
-	// 2. Determine binary name and archive URL.
+	// 2. Determine binary name and archive URL. The asset OS is mapped because
+	// some platforms (android/Termux) consume another platform's published build.
 	goos := profile.OS
+	assetOS := engramAssetOS(goos)
 	goarch := normalizeArch(runtime.GOARCH)
-	assetURL := engramAssetURL(engramGitHubBaseURL, version, goos, goarch)
-	archiveName := engramArchiveName(version, goos, goarch)
+	assetURL := engramAssetURL(engramGitHubBaseURL, version, assetOS, goarch)
+	archiveName := engramArchiveName(version, assetOS, goarch)
 	checksumURL := engramChecksumURLFn(engramGitHubBaseURL, version)
 
 	// 3. Determine install directory.
@@ -473,12 +475,25 @@ func engramAPIBaseURL() string {
 // version/os/arch combination.
 //
 // Convention: engram_{version}_{os}_{arch}.tar.gz (or .zip on Windows)
+// engramArchiveName builds the release archive name for an OS token. Callers
+// pass an already-mapped OS (see engramAssetOS), not the raw runtime platform.
 func engramArchiveName(version, goos, goarch string) string {
 	ext := ".tar.gz"
 	if goos == "windows" {
 		ext = ".zip"
 	}
 	return fmt.Sprintf("%s_%s_%s_%s%s", engramRepo, version, goos, goarch, ext)
+}
+
+// engramAssetOS maps a platform profile OS to the token used in engram release
+// asset names. Termux reports "android" while upstream publishes only darwin,
+// linux and windows builds; a static linux build runs on Android, so "android"
+// resolves to the linux asset instead of 404ing every upgrade.
+func engramAssetOS(goos string) string {
+	if goos == "android" {
+		return "linux"
+	}
+	return goos
 }
 
 // engramAssetURL constructs the download URL for the engram release asset.
