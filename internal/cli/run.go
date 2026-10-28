@@ -3787,17 +3787,9 @@ func envHasKey(env []string, key string) bool {
 }
 
 func executeCommand(name string, args ...string) error {
-	// system.Command resolves POSIX shebangs on Termux, where npm-installed
-	// programs keep an upstream `#!/usr/bin/env <interpreter>` line the kernel
-	// cannot resolve because /usr/bin/env does not exist on Android.
-	cmd := system.Command(name, args...)
+	cmd := exec.Command(name, args...)
 	cmd.Env = commandEnv(name, args, os.Environ())
 	system.EnsureCommandDir(cmd)
-
-	// [TERMUX EDITION] Pass npm_config_force=true so npm and pi ignore platform restrictions on Android/Termux
-	if system.IsTermux() {
-		cmd.Env = append(cmd.Env, "npm_config_force=true", "NPM_CONFIG_FORCE=true")
-	}
 
 	if streamCommandOutput {
 		cmd.Stdout = os.Stdout

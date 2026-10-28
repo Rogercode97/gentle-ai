@@ -25,9 +25,6 @@ var selfUpdateNowFn = func() time.Time { return time.Now() }
 // selfUpdateHomeDirFn resolves the user home directory; injected for tests.
 var selfUpdateHomeDirFn = os.UserHomeDir
 
-// isTermuxFn checks if the environment is Termux/Android; injected for tests.
-var isTermuxFn = system.IsTermux
-
 // Environment variable names for self-update control.
 // NOTE: GENTLE_AI_CONFIRM_UPDATE removed in slice 5 — prompt is now unconditional.
 const (
@@ -82,16 +79,11 @@ const selfUpdateTimeout = 7 * time.Second
 // Returns nil on success or skip; errors are non-fatal (caller logs and continues).
 //
 // Guard evaluation order (per spec):
-//  0. isTermuxFn() → skip (protect Termux/Android binaries from upstream overwrite)
 //  1. GENTLE_AI_SELF_UPDATE_DONE=1 → skip (loop guard)
 //  2. GENTLE_AI_NO_SELF_UPDATE=1 → skip (opt-out)
 //  3. version == "dev" → skip (dev build)
 //  4. Proceed with update check
 func selfUpdate(ctx context.Context, version string, profile system.PlatformProfile, stdout io.Writer) error {
-	// Guard 0: [Termux Edition] Disable built-in updater entirely to protect the Android binary.
-	if isTermuxFn() {
-		return nil
-	}
 	// Guard 1: loop prevention — already updated this invocation.
 	if os.Getenv(envSelfUpdateDone) == "1" {
 		return nil

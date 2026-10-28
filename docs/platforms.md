@@ -20,27 +20,10 @@
 | Linux (NixOS) | nix | Supported (install prerequisites manually) |
 | Linux (Gentoo) | emerge | Supported (install prerequisites manually) |
 | Windows 10/11 | `go install` (Go toolchain) | Supported (binary distribution held) |
-| Android (Termux) | none (local build) | Supported (fork-only, see below) |
 
 On Linux, support depends on which package manager is on `PATH`, not on the distribution name, so derivatives (Linux Mint, Pop!_OS, Manjaro, Rocky Linux, etc.) work too. Gentle AI checks `brew`, `apt`, `dnf`, `rpm-ostree`, `pacman`, `apk`, `zypper`, `nix`, `emerge` in that order and uses the first one it finds. `rpm-ostree` is considered only on OSTree-booted systems, where it wins over `dnf` (see [Precedence](#fedora-silverblue-rpm-ostree-notes)). "Install prerequisites manually" means that when Git, curl, or Node.js is missing, `gentle-ai install` prints a download link instead of a package-manager command. For a missing npm, it asks you to install Node.js first on every platform.
 
 Release archives are currently produced for macOS and Linux only. Windows source compatibility remains supported, but official Windows executable/archive assets and Scoop publication are temporarily unavailable pending the [Authenticode restoration gate](release-signing.md#windows-distribution-restoration-gate).
-
-## Android (Termux) Notes
-
-Android support is **not upstream**. It lives entirely in the Termux layer of this fork and is gated by `IsTermux()` (`internal/system/detect.go`), which is true when `GOOS` is `android` or `PREFIX` points into `com.termux`. Every behavior below is therefore inert on upstream Linux CI, and rebasing onto `upstream/main` must never drop the layer.
-
-The layer covers:
-
-- **POSIX shebang resolution** (`internal/system/shebang_command.go`). npm-installed CLIs keep the upstream `#!/usr/bin/env node` shebang and Termux has no `/usr/bin/env`. Go's `os/exec` issues `execve(2)` directly instead of calling libc `execve`, so Termux's `libtermux-exec` preload never rewrites it. Interactive shells work because they go through libc; a shell-out from Go does not.
-- **Platform detection that does not assume GNU Linux** and `os.TempDir()` instead of a hardcoded `/tmp`, which is not writable here.
-- **`npm_config_force` for Android**, because npm rejects the platform of some packages.
-- **The native self-updater stays disabled.** A published upstream build has no Android support, so an in-place self-update would replace a working binary with a broken one. Update the fork by rebuilding locally instead.
-
-Two hard rules for anyone building here:
-
-- Never run `go install …/cmd/gentle-ai@latest` against the local binary. It overwrites the Termux build with an upstream binary that has no Android support.
-- Never trust release numbers. Upstream publishes `v3.x` tags from an abandoned history while the live branch runs a `v1.x` line on a `/v3` module path, so Go rejects the tags and stamps a local build from `git describe`.
 
 ## OpenCode Managed Launcher
 

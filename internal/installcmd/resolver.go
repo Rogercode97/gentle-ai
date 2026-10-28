@@ -307,7 +307,7 @@ func resolveGGAInstall(profile system.PlatformProfile) (CommandSequence, error) 
 		// probe's list (issue #2499). The gate keeps a probe-rejected Linux
 		// profile (empty PackageManager) on the unsupported arm.
 		if profile.OS == "linux" && profile.PackageManager != "" {
-			tmpDir := filepath.Join(os.TempDir(), "gentleman-guardian-angel")
+			const tmpDir = "/tmp/gentleman-guardian-angel"
 			tagRef := "refs/tags/v" + versions.GGAVersion
 			return CommandSequence{
 				{"rm", "-rf", tmpDir},
