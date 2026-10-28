@@ -8,10 +8,12 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/gentleman-programming/gentle-ai/v3/internal/agents"
-	"github.com/gentleman-programming/gentle-ai/v3/internal/assets"
-	"github.com/gentleman-programming/gentle-ai/v3/internal/components/filemerge"
-	"github.com/gentleman-programming/gentle-ai/v3/internal/model"
+	"github.com/gentleman-programming/gentle-ai/v4/internal/agents"
+	"github.com/gentleman-programming/gentle-ai/v4/internal/agents/cursor"
+	piagent "github.com/gentleman-programming/gentle-ai/v4/internal/agents/pi"
+	"github.com/gentleman-programming/gentle-ai/v4/internal/assets"
+	"github.com/gentleman-programming/gentle-ai/v4/internal/components/filemerge"
+	"github.com/gentleman-programming/gentle-ai/v4/internal/model"
 )
 
 type InjectionResult struct {
@@ -26,11 +28,20 @@ func PiPersonaConfigPath(rootDir string) string {
 	return filepath.Join(rootDir, ".pi", "gentle-ai", "persona.json")
 }
 
-// InjectPiPersona writes the small runtime config consumed by gentle-pi.
-// Custom personas remain user-owned and therefore intentionally do nothing.
-func InjectPiPersona(rootDir string, persona model.PersonaID) (InjectionResult, error) {
-	if strings.TrimSpace(rootDir) == "" {
-		return InjectionResult{}, fmt.Errorf("Pi persona root must not be empty")
+// PiGlobalPersonaConfigPath returns the persona state path of a global
+// install: persona.json in gentle-pi's config folder, which
+// GENTLE_AI_PI_CONFIG_DIR relocates (default <homeDir>/.pi/gentle-ai).
+func PiGlobalPersonaConfigPath(homeDir string) string {
+	return filepath.Join(piagent.GentlePiConfigDir(homeDir), "persona.json")
+}
+
+// InjectPiPersonaAt writes the small runtime config consumed by gentle-pi to
+// an exact persona.json path (PiPersonaConfigPath for a workspace,
+// PiGlobalPersonaConfigPath for a global install). Custom personas remain
+// user-owned and therefore intentionally do nothing.
+func InjectPiPersonaAt(path string, persona model.PersonaID) (InjectionResult, error) {
+	if strings.TrimSpace(path) == "" {
+		return InjectionResult{}, fmt.Errorf("Pi persona path must not be empty")
 	}
 	if persona == model.PersonaCustom {
 		return InjectionResult{}, nil
@@ -48,7 +59,6 @@ func InjectPiPersona(rootDir string, persona model.PersonaID) (InjectionResult, 
 	}
 	content = append(content, '\n')
 
-	path := PiPersonaConfigPath(rootDir)
 	writeResult, err := filemerge.WriteFileAtomic(path, content, 0o644)
 	if err != nil {
 		return InjectionResult{}, err
@@ -192,6 +202,25 @@ func injectInternal(homeDir string, adapter agents.Adapter, persona model.Person
 	case model.StrategyFileReplace:
 		promptPath := adapter.SystemPromptFile(homeDir)
 
+		if adapter.Agent() == model.AgentCursor {
+			existing, err := readFileOrEmpty(promptPath)
+			if err != nil {
+				return InjectionResult{}, err
+			}
+			// Cursor owns the leading persona body, but other components append
+			// marker-bound sections that install and sync must retain.
+			if idx := strings.Index(existing, "<!-- gentle-ai:"); idx >= 0 {
+				content = strings.TrimRight(content, "\n") + "\n\n" + existing[idx:]
+			}
+			writeResult, err := filemerge.WriteFileAtomic(promptPath, []byte(cursor.WrapRule(content)), 0o644)
+			if err != nil {
+				return InjectionResult{}, err
+			}
+			changed = changed || writeResult.Changed
+			files = append(files, promptPath)
+			break
+		}
+
 		if adapter.Agent() == model.AgentOpenCode {
 			existing, err := readFileOrEmpty(promptPath)
 			if err != nil {
@@ -213,6 +242,31 @@ func injectInternal(homeDir string, adapter agents.Adapter, persona model.Person
 
 			healed = filemerge.StripLegacyATLBlock(healed)
 			updated := filemerge.InjectMarkdownSection(healed, "persona", content)
+
+			writeResult, err := filemerge.WriteFileAtomic(promptPath, []byte(updated), 0o644)
+			if err != nil {
+				return InjectionResult{}, err
+			}
+			changed = changed || writeResult.Changed
+			files = append(files, promptPath)
+			break
+		}
+
+		// Codex shares ~/.codex/AGENTS.md with user-authored content and with
+		// other managed sections (engram, SDD) that are appended after persona.
+		// The persona must therefore live inside a <!-- gentle-ai:persona -->
+		// marker section instead of owning the whole file, so install, sync and
+		// uninstall can replace or remove exactly the managed persona content
+		// (issue #981). This mirrors the OpenCode handling above.
+		if adapter.Agent() == model.AgentCodex {
+			existing, err := readFileOrEmpty(promptPath)
+			if err != nil {
+				return InjectionResult{}, err
+			}
+
+			healed := stripExactLegacyPersonaAsset(existing)
+			healed = filemerge.StripLegacyATLBlock(healed)
+			updated := injectPersonaBeforeManagedSections(healed, content)
 
 			writeResult, err := filemerge.WriteFileAtomic(promptPath, []byte(updated), 0o644)
 			if err != nil {
@@ -549,6 +603,57 @@ func isExactLegacyPersonaAsset(existing string) bool {
 	return false
 }
 
+// stripExactLegacyPersonaAsset removes installer-owned legacy persona content
+// from existing when it is byte-for-byte one of the known legacy persona
+// assets. Two safe cases are handled:
+//
+//  1. The whole file is the legacy asset (no markers at all) — the old
+//     installer owned the entire file, so it can be replaced wholesale.
+//  2. The pre-marker zone (content before the first <!-- gentle-ai: -->
+//     marker) is exactly the legacy asset, followed by managed sections that
+//     later install steps appended (engram, SDD). Only the installer-owned
+//     zone is removed; every marker section is preserved. This migrates the
+//     markerless persona prose written by installers up to v1.43.2
+//     (issue #981).
+//
+// Anything else — including user content that merely resembles the persona —
+// is returned unchanged.
+func stripExactLegacyPersonaAsset(existing string) string {
+	if strings.TrimSpace(existing) == "" {
+		return existing
+	}
+	firstMarkerIdx := strings.Index(existing, "<!-- gentle-ai:")
+	if firstMarkerIdx < 0 {
+		if isExactLegacyPersonaAsset(existing) {
+			return ""
+		}
+		return existing
+	}
+	if isExactLegacyPersonaAsset(existing[:firstMarkerIdx]) {
+		return existing[firstMarkerIdx:]
+	}
+	return existing
+}
+
+func injectPersonaBeforeManagedSections(existing, content string) string {
+	if strings.Contains(existing, "<!-- gentle-ai:persona -->") {
+		return filemerge.InjectMarkdownSection(existing, "persona", content)
+	}
+
+	firstMarkerIdx := strings.Index(existing, "<!-- gentle-ai:")
+	if firstMarkerIdx < 0 {
+		return filemerge.InjectMarkdownSection(existing, "persona", content)
+	}
+
+	section := filemerge.InjectMarkdownSection("", "persona", content)
+	before := strings.TrimRight(existing[:firstMarkerIdx], "\r\n")
+	after := strings.TrimLeft(existing[firstMarkerIdx:], "\r\n")
+	if before == "" {
+		return section + "\n" + after
+	}
+	return before + "\n\n" + section + "\n" + after
+}
+
 func shouldStripManagedLegacyPersona(existing string) bool {
 	return strings.Contains(existing, "<!-- gentle-ai:persona -->")
 }
@@ -691,10 +796,13 @@ func removeJSONAgentTools(path string, names ...string) (filemerge.WriteResult, 
 	return filemerge.WriteFileAtomic(path, cleaned, filemerge.ExistingFileMode(path, 0o644))
 }
 
-// preflightJSONCAgentCleanup refuses a lossy agent rewrite before the persona
-// prompt or any other asset is changed. JSONC comments within custom agents
-// cannot be retained by the existing whole-agent merge, and the Gentleman
-// install cannot merge its agent into malformed JSONC at all.
+// preflightJSONCAgentCleanup refuses a lossy or failing agent rewrite before
+// the persona prompt or any other asset is changed. JSONC comments within
+// custom agents cannot be retained by the existing whole-agent merge, an
+// escaped "agent" spelling cannot be located by the JSONC text rewrite, and
+// the Gentleman install cannot merge its agent into malformed JSONC at all.
+// Documents the later cleanup cannot parse are never rewritten by it, so sync
+// and non-Gentleman flows keep tolerating them.
 func preflightJSONCAgentCleanup(path string, persona model.PersonaID, syncManaged bool) error {
 	raw, err := osReadFile(path)
 	if err != nil {
@@ -705,18 +813,33 @@ func preflightJSONCAgentCleanup(path string, persona model.PersonaID, syncManage
 			return fmt.Errorf("refuse OpenCode persona install: %q is malformed JSONC; fix its syntax and retry: %w", path, parseErr)
 		}
 	}
-	if !preservesJSONComments(path, raw) || !filemerge.JSONCAgentHasComments(raw) {
+	if !preservesJSONComments(path, raw) {
 		return nil
 	}
 	root, err := filemerge.UnmarshalJSONObject(raw)
 	if err != nil {
-		return fmt.Errorf("refuse malformed JSONC agent before persona mutation: %w", err)
+		// Sync cleanups skip settings they cannot parse, so only install can
+		// reach a lossy rewrite of a malformed, comment-bearing agent value.
+		if !syncManaged && filemerge.JSONCAgentHasComments(raw) {
+			return fmt.Errorf("refuse malformed JSONC agent before persona mutation: %w", err)
+		}
+		return nil
 	}
+	// Mirror the presence checks of the cleanups below: an explicit null value
+	// still triggers their rewrite.
 	agents, _ := root["agent"].(map[string]any)
 	gentleman, _ := agents["gentleman"].(map[string]any)
-	rewrites := !isGentlemanConversationPersona(persona) && agents["gentleman"] != nil ||
-		isGentlemanConversationPersona(persona) && (!syncManaged || gentleman["tools"] != nil)
-	if rewrites {
+	_, hasGentleman := agents["gentleman"]
+	_, hasTools := gentleman["tools"]
+	rewrites := !isGentlemanConversationPersona(persona) && hasGentleman ||
+		isGentlemanConversationPersona(persona) && (!syncManaged || hasTools)
+	if !rewrites {
+		return nil
+	}
+	if filemerge.JSONCTopLevelKeyIsEscaped(raw, "agent") {
+		return fmt.Errorf("refuse OpenCode persona mutation: %q writes its \"agent\" key with an escaped spelling; use its unescaped spelling and retry", path)
+	}
+	if filemerge.JSONCAgentHasComments(raw) {
 		return fmt.Errorf("refuse to rewrite JSONC agent with nested comments; remove the owned legacy fields manually or move the comments before retrying")
 	}
 	return nil
@@ -736,14 +859,21 @@ func preservesJSONComments(path string, raw []byte) bool {
 // replaceJSONCAgent preserves comments outside the managed agent subtree when
 // the legacy tools cleanup re-encodes a JSONC document.
 func replaceJSONCAgent(original, cleaned []byte) ([]byte, error) {
-	if filemerge.JSONCAgentHasComments(original) {
-		return nil, fmt.Errorf("refuse to rewrite JSONC agent with nested comments; remove the owned legacy fields manually or move the comments before retrying")
+	return replaceJSONCTopLevelValue(original, cleaned, "agent")
+}
+
+// replaceJSONCTopLevelValue replaces only the named top-level value of the
+// original JSONC document with its cleaned counterpart, preserving comments
+// outside that subtree. It refuses when the subtree itself carries comments.
+func replaceJSONCTopLevelValue(original, cleaned []byte, key string) ([]byte, error) {
+	if filemerge.JSONCTopLevelValueHasComments(original, key) {
+		return nil, fmt.Errorf("refuse to rewrite JSONC %s with nested comments; remove the owned legacy fields manually or move the comments before retrying", key)
 	}
 	root, err := filemerge.UnmarshalJSONObject(cleaned)
 	if err != nil {
 		return nil, err
 	}
-	overlay, err := json.Marshal(map[string]any{"agent": map[string]any{"__replace__": root["agent"]}})
+	overlay, err := json.Marshal(map[string]any{key: map[string]any{"__replace__": root[key]}})
 	if err != nil {
 		return nil, err
 	}
@@ -816,7 +946,7 @@ func readFileOrEmpty(path string) (string, error) {
 func wrapInstructionsFile(content string) string {
 	frontmatter := "---\n" +
 		"name: Gentle AI Persona\n" +
-		"description: Teaching-oriented persona with SDD orchestration and Engram protocol\n" +
+		"description: Teaching-oriented persona with ODD orchestration and Engram protocol\n" +
 		"applyTo: \"**\"\n" +
 		"---\n\n"
 
@@ -930,8 +1060,8 @@ func removeJSONKeyIfValue(path, key, wantValue string) (bool, error) {
 // parentKey is absent, or subKey is not present, it is a no-op and returns false.
 //
 // Only OpenCode settings parse comment-bearing JSON and keep comments outside
-// the cleaned agent subtree; other agents skip documents that are not strict
-// JSON.
+// the cleaned parentKey subtree; other agents skip documents that are not
+// strict JSON.
 func removeJSONNestedSubKey(path, parentKey, subKey string, openCode bool) (bool, error) {
 	raw, err := osReadFile(path)
 	if err != nil {
@@ -975,8 +1105,8 @@ func removeJSONNestedSubKey(path, parentKey, subKey string, openCode bool) (bool
 		return false, fmt.Errorf("marshal settings after cleanup: %w", err)
 	}
 	encoded = append(encoded, '\n')
-	if openCode && preservesJSONComments(path, raw) && parentKey == "agent" {
-		// Preserve unrelated comments while replacing the cleaned agent subtree.
+	if openCode && preservesJSONComments(path, raw) {
+		// Preserve unrelated comments while replacing the cleaned subtree.
 		if _, exists := root[parentKey]; !exists {
 			root[parentKey] = map[string]any{}
 			encoded, err = json.Marshal(root)
@@ -984,7 +1114,7 @@ func removeJSONNestedSubKey(path, parentKey, subKey string, openCode bool) (bool
 				return false, err
 			}
 		}
-		encoded, err = replaceJSONCAgent(raw, encoded)
+		encoded, err = replaceJSONCTopLevelValue(raw, encoded, parentKey)
 		if err != nil {
 			return false, err
 		}

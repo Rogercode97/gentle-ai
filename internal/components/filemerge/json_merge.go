@@ -68,7 +68,7 @@ func MergeOpenCodeJSONCObjects(baseJSON []byte, overlayJSON []byte) ([]byte, err
 		return nil, fmt.Errorf("unmarshal overlay json: %w", err)
 	}
 	for key := range overlay {
-		if _, present := base[key]; present && topLevelJSONCKeyCount(string(baseJSON), key) == 0 {
+		if escapedTopLevelJSONCKey(string(baseJSON), base, key) {
 			return baseJSON, fmt.Errorf("refuse to rewrite JSONC %q with an escaped key spelling; use its unescaped spelling and retry", key)
 		}
 		if topLevelJSONCKeyCount(string(baseJSON), key) > 1 {
@@ -146,7 +146,7 @@ func mergeJSONDefaultsForPath(path string, baseJSON, defaultsJSON []byte, openCo
 	}
 	updated := string(baseJSON)
 	for key := range defaults {
-		if _, present := base[key]; openCode && present && topLevelJSONCKeyCount(updated, key) == 0 {
+		if openCode && escapedTopLevelJSONCKey(updated, base, key) {
 			return nil, fmt.Errorf("refuse to rewrite JSONC %q with an escaped key spelling; use its unescaped spelling and retry", key)
 		}
 		if topLevelJSONCKeyCount(updated, key) > 1 {
@@ -220,28 +220,40 @@ func marshalPermissionOrder(base []byte, value any, ordered bool) ([]byte, error
 }
 
 func unmarshalJSONObject(raw []byte) (map[string]any, error) {
-	object := map[string]any{}
 	if len(bytes.TrimSpace(raw)) == 0 {
+		return map[string]any{}, nil
+	}
+
+	if object, err := DecodeStrictJSONObject(raw); err == nil {
 		return object, nil
 	}
 
-	if err := json.Unmarshal(raw, &object); err == nil {
-		return object, nil
-	}
-
-	normalized := normalizeJSON(raw)
-	if err := json.Unmarshal(normalized, &object); err != nil {
-		return nil, err
-	}
-
-	return object, nil
+	return DecodeStrictJSONObject(normalizeJSON(raw))
 }
 
 // UnmarshalJSONObject decodes a JSON object using the same JSONC normalization
 // accepted by MergeJSONObjects: comments are stripped and trailing commas are
-// removed before falling back to strict JSON decoding errors.
+// removed before falling back to strict JSON decoding errors. Numbers decode
+// as json.Number, as in DecodeStrictJSONObject.
 func UnmarshalJSONObject(raw []byte) (map[string]any, error) {
 	return unmarshalJSONObject(raw)
+}
+
+// DecodeStrictJSONObject decodes exactly one JSON document with the validation
+// and error text of json.Unmarshal, but keeps numbers as json.Number so a
+// rewrite re-encodes every number token exactly as the user wrote it.
+func DecodeStrictJSONObject(raw []byte) (map[string]any, error) {
+	var document json.RawMessage
+	if err := json.Unmarshal(raw, &document); err != nil {
+		return nil, err
+	}
+	var object map[string]any
+	decoder := json.NewDecoder(bytes.NewReader(document))
+	decoder.UseNumber()
+	if err := decoder.Decode(&object); err != nil {
+		return nil, err
+	}
+	return object, nil
 }
 
 // RejectDuplicateJSONKeys checks decoded JSON/JSONC object keys at every depth.
@@ -257,6 +269,7 @@ func rejectDuplicateJSONKeys(raw []byte) error {
 		return nil
 	}
 	decoder := json.NewDecoder(bytes.NewReader(normalizeJSON(raw)))
+	decoder.UseNumber()
 	var walk func() error
 	walk = func() error {
 		token, err := decoder.Token()
@@ -411,6 +424,24 @@ func RemoveLegacyOpenCodeAgentMarkers(path string, raw []byte, names []string) (
 		agentText = agentText[:a] + defText[:key] + defText[finish:] + agentText[b:]
 	}
 	return []byte(text[:start] + agentText + text[end:]), nil
+}
+
+// JSONCTopLevelKeyIsEscaped reports whether the decoded top-level key is
+// present only under an escaped spelling (for example "\u0061gent"). The JSONC
+// text rewrite cannot locate such a key, so MergeOpenCodeJSONCObjects refuses
+// to touch it; callers use this to refuse before mutating any other file.
+// Unparseable documents report false.
+func JSONCTopLevelKeyIsEscaped(raw []byte, key string) bool {
+	root, err := unmarshalJSONObject(raw)
+	if err != nil {
+		return false
+	}
+	return escapedTopLevelJSONCKey(string(raw), root, key)
+}
+
+func escapedTopLevelJSONCKey(content string, decoded map[string]any, key string) bool {
+	_, present := decoded[key]
+	return present && topLevelJSONCKeyCount(content, key) == 0
 }
 
 // JSONCTopLevelValueHasComments reports whether replacing the named value

@@ -3,6 +3,7 @@ package system
 import (
 	"context"
 	"os"
+	"os/exec"
 	"runtime"
 	"strings"
 )
@@ -82,7 +83,7 @@ type DetectionResult struct {
 }
 
 func IsSupportedOS(goos string) bool {
-	return goos == "darwin" || goos == "linux" || goos == "windows" || goos == "android"
+	return goos == "darwin" || goos == "linux" || goos == "windows"
 }
 
 func Detect(ctx context.Context) (DetectionResult, error) {
@@ -95,16 +96,13 @@ func Detect(ctx context.Context) (DetectionResult, error) {
 	configs := ScanConfigs(homeDir)
 	osReleaseContent, _ := osReleaseContent(runtime.GOOS)
 
-	effectiveOS := runtime.GOOS
-	if IsTermux() {
-		effectiveOS = "android"
-	}
-
-	result := detectFromInputs(effectiveOS, runtime.GOARCH, os.Getenv("SHELL"), osReleaseContent, tools, configs)
-	// On Windows or Android/Termux, npm global prefix is user-writable by default (no sudo needed).
-	if effectiveOS == "windows" || effectiveOS == "android" {
+	result := detectFromInputs(runtime.GOOS, runtime.GOARCH, os.Getenv("SHELL"), osReleaseContent, tools, configs)
+	// On Windows, npm global prefix is user-writable by default (no sudo needed).
+	// A caller that supplies Engram skips the npm prefix probe: NpmWritable
+	// only shapes install advice for npm-based agents that is never executed.
+	if runtime.GOOS == "windows" {
 		result.System.Profile.NpmWritable = true
-	} else {
+	} else if !callerSuppliesEngram() {
 		result.System.Profile.NpmWritable = detectNpmWritable(homeDir)
 	}
 	result.Dependencies = DetectDependencies(ctx, result.System.Profile)
@@ -115,7 +113,7 @@ func Detect(ctx context.Context) (DetectionResult, error) {
 // detectNpmWritable checks if npm's global prefix is under the user's home
 // directory (nvm, fnm, volta, etc.), meaning sudo is not needed for global installs.
 func detectNpmWritable(homeDir string) bool {
-	out, err := Command("npm", "config", "get", "prefix").Output()
+	out, err := runProbe(exec.Command("npm", "config", "get", "prefix"))
 	if err != nil {
 		return false
 	}
@@ -160,15 +158,6 @@ func osReleaseContent(goos string) (string, error) {
 	return string(data), nil
 }
 
-// IsTermux checks if the current environment is running inside Termux on Android.
-func IsTermux() bool {
-	if runtime.GOOS == "android" {
-		return true
-	}
-	prefix := os.Getenv("PREFIX")
-	return prefix != "" && strings.Contains(prefix, "com.termux")
-}
-
 func resolvePlatformProfile(goos, linuxOSRelease string, tools map[string]ToolStatus) PlatformProfile {
 	profile := PlatformProfile{OS: goos}
 
@@ -180,10 +169,6 @@ func resolvePlatformProfile(goos, linuxOSRelease string, tools map[string]ToolSt
 	switch goos {
 	case "darwin":
 		profile.PackageManager = "brew"
-		profile.Supported = true
-		return profile
-	case "android":
-		profile.PackageManager = "apt"
 		profile.Supported = true
 		return profile
 	case "linux":

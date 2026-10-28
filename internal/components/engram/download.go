@@ -6,6 +6,7 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -17,8 +18,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gentleman-programming/gentle-ai/v3/internal/components/filemerge"
-	"github.com/gentleman-programming/gentle-ai/v3/internal/system"
+	"github.com/gentleman-programming/gentle-ai/v4/internal/components/filemerge"
+	"github.com/gentleman-programming/gentle-ai/v4/internal/system"
 )
 
 const (
@@ -159,11 +160,13 @@ func DownloadLatestBinary(profile system.PlatformProfile, isBeta bool) (string, 
 		return "", fmt.Errorf("fetch latest engram version: %w", err)
 	}
 
-	// 2. Determine binary name and archive URL.
+	// 2. Determine binary name and archive URL. The asset OS is mapped because
+	// some platforms (android/Termux) consume another platform's published build.
 	goos := profile.OS
+	assetOS := engramAssetOS(goos)
 	goarch := normalizeArch(runtime.GOARCH)
-	assetURL := engramAssetURL(engramGitHubBaseURL, version, goos, goarch)
-	archiveName := engramArchiveName(version, goos, goarch)
+	assetURL := engramAssetURL(engramGitHubBaseURL, version, assetOS, goarch)
+	archiveName := engramArchiveName(version, assetOS, goarch)
 	checksumURL := engramChecksumURLFn(engramGitHubBaseURL, version)
 
 	// 3. Determine install directory.
@@ -472,12 +475,25 @@ func engramAPIBaseURL() string {
 // version/os/arch combination.
 //
 // Convention: engram_{version}_{os}_{arch}.tar.gz (or .zip on Windows)
+// engramArchiveName builds the release archive name for an OS token. Callers
+// pass an already-mapped OS (see engramAssetOS), not the raw runtime platform.
 func engramArchiveName(version, goos, goarch string) string {
 	ext := ".tar.gz"
 	if goos == "windows" {
 		ext = ".zip"
 	}
 	return fmt.Sprintf("%s_%s_%s_%s%s", engramRepo, version, goos, goarch, ext)
+}
+
+// engramAssetOS maps a platform profile OS to the token used in engram release
+// asset names. Termux reports "android" while upstream publishes only darwin,
+// linux and windows builds; a static linux build runs on Android, so "android"
+// resolves to the linux asset instead of 404ing every upgrade.
+func engramAssetOS(goos string) string {
+	if goos == "android" {
+		return "linux"
+	}
+	return goos
 }
 
 // engramAssetURL constructs the download URL for the engram release asset.
@@ -491,6 +507,26 @@ func engramAssetURL(baseURL, version, goos, goarch string) string {
 func engramChecksumURL(baseURL, version string) string {
 	return fmt.Sprintf("%s/%s/%s/releases/download/v%s/checksums.txt",
 		baseURL, engramOwner, engramRepo, version)
+}
+
+// ensureTraversableDownloadDir creates the directory that will hold a downloaded
+// archive or binary at 0755. os.MkdirAll applies the process umask, so a hardened
+// umask (for example 077) would leave a fresh download directory at 0700 and
+// contradict the documented contract that this path stays traversable. An
+// existing directory keeps the operator's chosen mode: only a directory this
+// call created is corrected.
+func ensureTraversableDownloadDir(dir string) error {
+	created := false
+	if _, err := os.Stat(dir); errors.Is(err, os.ErrNotExist) {
+		created = true
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	if !created {
+		return nil
+	}
+	return os.Chmod(dir, 0o755)
 }
 
 // engramDownloadToFile downloads the resource at url to outPath and returns the
@@ -517,7 +553,7 @@ func engramDownloadToFile(ctx context.Context, url string, outPath string) (hexD
 
 	// Create the parent at 0755 explicitly: the writer's own parent creation is
 	// tuned for private config files, and a download directory on PATH is not one.
-	if err := os.MkdirAll(filepath.Dir(outPath), 0o755); err != nil {
+	if err := ensureTraversableDownloadDir(filepath.Dir(outPath)); err != nil {
 		return "", fmt.Errorf("create dir: %w", err)
 	}
 	result, err := filemerge.WriteStreamAtomic(outPath, resp.Body, 0o644)
@@ -848,7 +884,7 @@ func engramGoInstallFromMain(pkg string) (string, error) {
 // The staged file is synchronized before publication, so if recovery preserves
 // the new name it also preserves complete content (#2216).
 func writeExecutable(r io.Reader, outPath string) error {
-	if err := os.MkdirAll(filepath.Dir(outPath), 0o755); err != nil {
+	if err := ensureTraversableDownloadDir(filepath.Dir(outPath)); err != nil {
 		return fmt.Errorf("create parent dir: %w", err)
 	}
 	if _, err := filemerge.WriteStreamAtomic(outPath, r, 0o755); err != nil {

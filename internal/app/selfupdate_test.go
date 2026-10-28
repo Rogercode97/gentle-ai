@@ -10,15 +10,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gentleman-programming/gentle-ai/v3/internal/state"
-	"github.com/gentleman-programming/gentle-ai/v3/internal/system"
-	"github.com/gentleman-programming/gentle-ai/v3/internal/update"
-	"github.com/gentleman-programming/gentle-ai/v3/internal/update/upgrade"
+	"github.com/gentleman-programming/gentle-ai/v4/internal/state"
+	"github.com/gentleman-programming/gentle-ai/v4/internal/system"
+	"github.com/gentleman-programming/gentle-ai/v4/internal/update"
+	"github.com/gentleman-programming/gentle-ai/v4/internal/update/upgrade"
 )
-
-func init() {
-	isTermuxFn = func() bool { return false }
-}
 
 // stubProfile returns a minimal PlatformProfile for testing.
 func stubProfile() system.PlatformProfile {
@@ -71,7 +67,6 @@ func swapSelfUpdateDeps(t *testing.T, checkResult []update.UpdateResult, upgrade
 	origUpgrade := upgradeExecute
 	origHomeDir := selfUpdateHomeDirFn
 	origNow := selfUpdateNowFn
-	origIsTermux := isTermuxFn
 
 	// Use a temp dir for cooldown state so the gate always reads "never checked"
 	// (no state.json present) and calls the injected updateCheckFiltered stub.
@@ -82,10 +77,8 @@ func swapSelfUpdateDeps(t *testing.T, checkResult []update.UpdateResult, upgrade
 		upgradeExecute = origUpgrade
 		selfUpdateHomeDirFn = origHomeDir
 		selfUpdateNowFn = origNow
-		isTermuxFn = origIsTermux
 	})
 
-	isTermuxFn = func() bool { return false }
 	selfUpdateHomeDirFn = func() (string, error) { return tmpHome, nil }
 	// Use a fixed "now" far in the future so any stale state would still trigger.
 	selfUpdateNowFn = func() time.Time { return time.Date(2099, 1, 1, 0, 0, 0, 0, time.UTC) }
@@ -1095,18 +1088,4 @@ func TestSelfUpdate_NoSelfUpdate_StillSkips_Slice5(t *testing.T) {
 // containsSubstring reports whether s contains substr (case-insensitive not needed here).
 func containsSubstring(s, substr string) bool {
 	return len(s) >= len(substr) && (s == substr || len(s) > 0 && strings.Contains(s, substr))
-}
-
-// TestSelfUpdate_Termux_Skips verifies Guard 0 returns nil early on Termux.
-func TestSelfUpdate_Termux_Skips(t *testing.T) {
-	stubs := swapSelfUpdateDeps(t, []update.UpdateResult{{Status: update.UpdateAvailable}}, upgrade.UpgradeReport{})
-	isTermuxFn = func() bool { return true }
-
-	err := selfUpdate(context.Background(), "1.8.0", stubProfile(), io.Discard)
-	if err != nil {
-		t.Fatalf("selfUpdate returned error: %v", err)
-	}
-	if stubs.checkCalled != 0 {
-		t.Errorf("checkCalled = %d, want 0 (Termux guard must return early)", stubs.checkCalled)
-	}
 }
