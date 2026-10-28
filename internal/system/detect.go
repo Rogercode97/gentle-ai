@@ -3,7 +3,6 @@ package system
 import (
 	"context"
 	"os"
-	"os/exec"
 	"runtime"
 	"strings"
 )
@@ -83,7 +82,7 @@ type DetectionResult struct {
 }
 
 func IsSupportedOS(goos string) bool {
-	return goos == "darwin" || goos == "linux" || goos == "windows"
+	return goos == "darwin" || goos == "linux" || goos == "windows" || goos == "android"
 }
 
 func Detect(ctx context.Context) (DetectionResult, error) {
@@ -158,6 +157,15 @@ func osReleaseContent(goos string) (string, error) {
 	return string(data), nil
 }
 
+// IsTermux checks if the current environment is running inside Termux on Android.
+func IsTermux() bool {
+	if runtime.GOOS == "android" {
+		return true
+	}
+	prefix := os.Getenv("PREFIX")
+	return prefix != "" && strings.Contains(prefix, "com.termux")
+}
+
 func resolvePlatformProfile(goos, linuxOSRelease string, tools map[string]ToolStatus) PlatformProfile {
 	profile := PlatformProfile{OS: goos}
 
@@ -169,6 +177,10 @@ func resolvePlatformProfile(goos, linuxOSRelease string, tools map[string]ToolSt
 	switch goos {
 	case "darwin":
 		profile.PackageManager = "brew"
+		profile.Supported = true
+		return profile
+	case "android":
+		profile.PackageManager = "apt"
 		profile.Supported = true
 		return profile
 	case "linux":
